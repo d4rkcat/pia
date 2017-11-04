@@ -19,7 +19,7 @@ Usage
 	-n 	- Change to another random port.
 	-d	- Change DNS servers to PIA.
 	-l	- List available servers.
-	-v  - Display verbose information.
+	-v	- Display verbose information.
 
 		Examples: 
 			 pia -dpu	- Update openvpn files, forward a port and change DNS servers to PIA
