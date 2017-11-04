@@ -16,13 +16,9 @@
 fupdate()						# Update the PIA openvpn files.
 {
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Updating PIA openvpn files."
-	rm -rf $VPNPATH/*.ovpn
-	rm -rf $VPNPATH/*.crt
-	rm -rf $VPNPATH/*.pem
-	rm -rf $VPNPATH/servers
+	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
 	wget -q https://www.privateinternetaccess.com/openvpn/openvpn-strong.zip -O $VPNPATH/pia.zip
-	(cd $VPNPATH && unzip -q pia.zip)
-	rm $VPNPATH/pia.zip
+	(cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip)
 	(cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done)
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
 	for file in $VPNPATH/*.ovpn;do echo 'auth-nocache' >> $file;done
@@ -32,10 +28,9 @@ fupdate()						# Update the PIA openvpn files.
 
 fforward()						# Forward a port.
 {
+	sleep 1
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	CLIENTID=$(cat $VPNPATH/client_id)
-	FORWARDEDPORT=$(curl -s -m 8 "http://209.222.18.222:2000/?client_id=$CLIENTID" | cut -d ':' -f 2 | cut -d '}' -f 1)
-	unset CLIENTID
+	FORWARDEDPORT=$(curl -s -m 8 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 }
 
 fnewport()						# Change port forwarded.
@@ -58,14 +53,20 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 fhelp()						# Help function.
 {
 	echo """Usage: ./pia.sh [Options]
+
+	-s	- Server number to connect to
+	-l	- List available servers.
 	-u	- Update PIA openvpn files before connecting.
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
 	-f	- Enable firewall to block all traffic apart from tun0
-	-l	- List available servers.
 	-v	- Display verbose information.
-	-h	- Display this help."""
+	-h	- Display this help.
+
+Examples: 
+	pia -dps 24 - Change DNS, forward a port and connect to Switzerland
+	pia -nfv	- Forward a new port, run firewall and be verbose"""
 	exit
 }
 
@@ -137,6 +138,8 @@ RESET=$(tput sgr0)
 
 						# This is where we will store PIA openVPN files and user config
 VPNPATH='/etc/openvpn/pia'
+
+						# Initialize switches
 PORTFORWARD=0
 NEWPORT=0
 DNS=0
@@ -144,9 +147,10 @@ FORWARDEDPORT=0
 VERBOSE=0
 ARCH=0
 FIREWALL=0
+SERVERNUM=0
 
 						# Check if user is root and OS is Arch
-if [ $(id -u) != 0 ];then echo -e " [$BOLD$RED"'X'"$RESET]Script must be run as root." && exit;fi
+if [ $(id -u) != 0 ];then echo -e " [$BOLD$RED"'X'"$RESET] Script must be run as root." && fhelp;fi
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then ARCH=1;fi
 
 						# Check for missing dependencies and install
@@ -154,7 +158,7 @@ if [ $ARCH -gt 0 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";pacman -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";pacman -S ufw; }
 else
-	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET]OS not detected as Arch or Debian, script will not work for you.";exit; }
+	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET] OS not detected as Arch or Debian, script will not work for you.";exit; }
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";apt-get install openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";apt-get install ufw; }
 fi
@@ -172,25 +176,29 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-while getopts "uphndlfv" opt
+while getopts "lhupndfvs:" opt
 do
  	case $opt in
+ 		l) flist;exit;;
+		h) fhelp;;
 		u) fupdate;;
 		p) PORTFORWARD=1;;
-		h) fhelp;;
 		n) fnewport;;
 		d) DNS=1;;
-		l) flist;exit;;
 		f) FIREWALL=1;;
 		v) VERBOSE=1;CURRIP=$(curl -s icanhazip.com);;
+		s) SERVERNUM=$OPTARG;;
 		*) fhelp;;
 	esac
 done
 
 trap fvpnreset INT
-echo -e " [$BOLD$BLUE"'>'"$RESET] Please choose a server: "
-flist
-read -p " ["$BOLD$BLUE">"$RESET"]" SERVERNUM
+
+if [ $SERVERNUM -lt 1 ];then
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Please choose a server: "
+	flist
+	read -p " ["$BOLD$BLUE">"$RESET"]" SERVERNUM
+fi
 
 SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
@@ -223,7 +231,7 @@ if [ $VERBOSE -gt 0 ];then
 	echo -n $RESET
 fi
 
-echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$GREEN""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)$RESET"
+echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)$RESET"
 
 if [ $DNS -gt 0 ];then
 	fdnschange
@@ -249,17 +257,21 @@ fi
 
 if [ $PORTFORWARD -gt 0 ];then
 	if [ $NEWPORT -gt 0 ]; then
-		CLIENTID=$(cat $VPNPATH/client_id)
 		echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
-		echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$CLIENTID$RESET"
+		echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+	else
+		if [ $VERBOSE -gt 0 ];then
+			echo -e " [$BOLD$BLUE"'>'"$RESET] Attempting to forward a port.."
+			echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+		fi
 	fi
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Attempting to forward a port.."
+
 	fforward
-	if [ $(echo $FORWARDEDPORT | wc -c) -gt 3 ] &>/dev/null;then
+	if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
 		echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
 	else
-		echo -e " [$BOLD$RED"'X'"$RESET]Port forwarding failed."
-		echo -e " [$BOLD$RED"'X'"$RESET]Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
+		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding failed."
+		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
 fi
 

@@ -15,15 +15,17 @@ pia will now be installed and can be run with 'pia'.
 Usage
 ==========
 	Usage: ./pia.sh [Options]
-		-u	- Update PIA openvpn files before connecting.
-		-p	- Forward a port.
-		-n	- Change to another random port.
-		-d	- Change DNS servers to PIA.
-		-f	- Enable firewall to block all traffic apart from tun0
-		-l	- List available servers.
-		-v	- Display verbose information.
-		-h	- Display this help.
 
-		Examples: 
-			 pia -dpu	- Update openvpn files, forward a port and change DNS servers to PIA
-			 pia -nfv	- Forward a new port, run firewall and be verbose.
+	-s	- Server number to connect to
+	-l	- List available servers.
+	-u	- Update PIA openvpn files before connecting.
+	-p	- Forward a port.
+	-n	- Change to another random port.
+	-d	- Change DNS servers to PIA.
+	-f	- Enable firewall to block all traffic apart from tun0
+	-v	- Display verbose information.
+	-h	- Display this help.
+
+Examples: 
+	pia -dps 24 - Change DNS, forward a port and connect to Switzerland
+	pia -nfv	- Forward a new port, run firewall and be verbose
