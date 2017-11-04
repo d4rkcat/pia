@@ -59,10 +59,10 @@ fhelp()							# Help function.
 	echo """Usage: ./pia.sh [Options]
 	-u	- Update PIA openvpn files before connecting.
 	-p	- Forward a port.
-	-n 	- Change to another random port.
+	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
 	-l	- List available servers.
-	-v  - Display verbose information."""
+	-v	- Display verbose information."""
 	exit
 }
 
