@@ -61,8 +61,10 @@ fhelp()						# Help function.
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
+	-f	- Enable firewall to block all traffic apart from tun0
 	-l	- List available servers.
-	-v	- Display verbose information."""
+	-v	- Display verbose information.
+	-h	- Display this help."""
 	exit
 }
 
@@ -72,7 +74,9 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 		fdnsrestore
 	fi
 	kill -s SIGINT "$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)" &>/dev/null
-	echo -e " ["$BOLD$GREEN"*"$RESET"]"" $(ufw disable 2>/dev/null)"
+	if [ $FIREWALL -gt 0 ];then
+		echo -e " ["$BOLD$GREEN"*"$RESET"]"" $(ufw disable 2>/dev/null)"
+	fi
 	echo " ["$BOLD$GREEN"*"$RESET"]"" VPN Disconnected."
 	exit 0
 }
@@ -107,7 +111,11 @@ fchecklog()						# Check openvpn logs to get connection state
 	LOGRETURN=0
 	VCONNECT=''
 	while [ $LOGRETURN -eq 0 ]; do
-		VCONNECT=$(journalctl /usr/bin/openvpn | tail -n 1)
+		if [ $ARCH -gt 0 ];then
+			VCONNECT=$(journalctl /usr/bin/openvpn | tail -n 1)
+		else
+			VCONNECT=$(cat /var/log/pia.log)
+		fi
 		if [ $(echo $VCONNECT | grep 'Initialization Sequence Completed' | wc -c) -gt 1	];then
 			LOGRETURN=1
 		fi
@@ -128,14 +136,27 @@ RESET=$(tput sgr0)
 
 						# This is where we will store PIA openVPN files and user config
 VPNPATH='/etc/openvpn'
+PORTFORWARD=0
+NEWPORT=0
+DNS=0
+FORWARDEDPORT=0
+VERBOSE=0
+ARCH=0
+FIREWALL=0
 
 						# Check if user is root and OS is Arch
 if [ $(id -u) != 0 ];then echo -e " ["$BOLD$RED"X"$RESET"]"" Script must be run as root." && exit;fi
-if [ $(uname -r | grep ARCH | wc -c) -lt 1 ];then echo -e " ["$BOLD$RED"X"$RESET"]"" Script only designed for Arch Linux." && exit;fi
+if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then ARCH=1;fi
 
 						# Check for missing dependencies and install
-command -v openvpn >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" openvpn required, installing..";pacman -S openvpn; }
-command -v ufw >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" ufw required, installing..";pacman -S ufw; }
+if [ $ARCH -gt 0 ];then
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" openvpn required, installing..";pacman -S openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" ufw required, installing..";pacman -S ufw; }
+else
+	command -v apt-get >/dev/null 2>&1 || { echo >&2 " ["$BOLD$RED"X"$RESET"]"" OS not detected as Arch or Debian, script will not work for you.";exit; }
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" openvpn required, installing..";apt-get install openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" ufw required, installing..";apt-get install ufw; }
+fi
 
 if [ ! -d $VPNPATH ];then mkdir $VPNPATH;fi
 
@@ -149,13 +170,7 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-PORTFORWARD=0
-NEWPORT=0
-DNS=0
-FORWARDEDPORT=0
-VERBOSE=0
-
-while getopts "uphndlv" opt
+while getopts "uphndlfv" opt
 do
  	case $opt in
 		u) fupdate;;
@@ -164,6 +179,7 @@ do
 		n) fnewport;;
 		d) DNS=1;;
 		l) flist;exit;;
+		f) FIREWALL=1;;
 		v) VERBOSE=1;CURRIP=$(curl -s icanhazip.com);;
 		*) fhelp;;
 	esac
@@ -179,7 +195,11 @@ clear
 echo -e " ["$BOLD$BLUE">"$RESET"]"" Connecting to $SERVER""..."
 OVPNFILE=$SERVER".ovpn"
 
-cd $VPNPATH && openvpn --config $OVPNFILE --daemon
+if [ $ARCH -gt 0 ];then
+	cd $VPNPATH && openvpn --config $OVPNFILE --daemon
+else
+	cd $VPNPATH && openvpn --config $OVPNFILE --daemon --log /var/log/pia.log
+fi
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
@@ -191,7 +211,11 @@ fi
 if [ $VERBOSE -gt 0 ];then
 	echo -e " ["$BOLD$GREEN"*"$RESET"]"" OpenVPN Logs:\n"
 	echo -n $CYAN
-	journalctl /usr/bin/openvpn | tail -n 13 | cut -d ' ' -f 6- | grep -v WARN
+	if [ $ARCH -gt 0 ];then
+		journalctl /usr/bin/openvpn | tail -n 13 | cut -d ' ' -f 6- | grep -v WARN
+	else
+		cat /var/log/pia.log
+	fi
 	echo -n $RESET
 fi
 
@@ -201,7 +225,9 @@ if [ $DNS -gt 0 ];then
 	fdnschange
 fi
 
-ffirewall
+if [ $FIREWALL -gt 0 ];then
+	ffirewall
+fi
 
 if [ $VERBOSE -gt 0 ];then
 	sleep 1
