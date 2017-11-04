@@ -18,8 +18,8 @@ fupdate()						# Update the PIA openvpn files.
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Updating PIA openvpn files."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
 	wget -q https://www.privateinternetaccess.com/openvpn/openvpn-strong.zip -O $VPNPATH/pia.zip
-	(cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip)
-	(cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done)
+	cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip
+	cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
 	for file in $VPNPATH/*.ovpn;do echo 'auth-nocache' >> $file;done
 	for file in $VPNPATH/*.ovpn;do echo $(basename $file) >> $VPNPATH/servers;done
@@ -65,7 +65,7 @@ fhelp()						# Help function.
 	-h	- Display this help.
 
 Examples: 
-	pia -dps 24 - Change DNS, forward a port and connect to Switzerland
+	pia -dps 24 	- Change DNS, forward a port and connect to Switzerland
 	pia -nfv	- Forward a new port, run firewall and be verbose"""
 	exit
 }
@@ -111,13 +111,8 @@ flist()						# List available servers
 fchecklog()						# Check openvpn logs to get connection state
 {
 	LOGRETURN=0
-	VCONNECT=''
 	while [ $LOGRETURN -eq 0 ]; do
-		if [ $ARCH -gt 0 ];then
-			VCONNECT=$(journalctl /usr/bin/openvpn | tail -n 1)
-		else
-			VCONNECT=$(cat /var/log/pia.log)
-		fi
+		VCONNECT=$(cat /var/log/pia.log)
 		if [ $(echo $VCONNECT | grep 'Initialization Sequence Completed' | wc -c) -gt 1	];then
 			LOGRETURN=1
 		fi
@@ -145,16 +140,15 @@ NEWPORT=0
 DNS=0
 FORWARDEDPORT=0
 VERBOSE=0
-ARCH=0
 FIREWALL=0
 SERVERNUM=0
 
-						# Check if user is root and OS is Arch
+						# Check if user is root
 if [ $(id -u) != 0 ];then echo -e " [$BOLD$RED"'X'"$RESET] Script must be run as root." && fhelp;fi
-if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then ARCH=1;fi
 
 						# Check for missing dependencies and install
-if [ $ARCH -gt 0 ];then
+						
+if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";pacman -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";pacman -S ufw; }
 else
@@ -205,11 +199,8 @@ SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
 clear
 echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $SERVERNAME, Please wait..."
 
-if [ $ARCH -gt 0 ];then
-	cd $VPNPATH && openvpn --config $SERVER --daemon
-else
-	cd $VPNPATH && openvpn --config $SERVER --daemon --log /var/log/pia.log
-fi
+
+cd $VPNPATH && openvpn --config $SERVER --daemon --log /var/log/pia.log
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
@@ -221,14 +212,8 @@ fi
 if [ $VERBOSE -gt 0 ];then
 	echo -e " [$BOLD$GREEN"'*'"$RESET] OpenVPN Logs:\n"
 	echo -n $CYAN
-	if [ $ARCH -gt 0 ];then
-		journalctl /usr/bin/openvpn | tail -n 13 | cut -d ' ' -f 6- | grep -v WARN
-		echo
-	else
-		cat /var/log/pia.log
-		echo
-	fi
-	echo -n $RESET
+	cat /var/log/pia.log
+	echo $RESET
 fi
 
 echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)$RESET"
