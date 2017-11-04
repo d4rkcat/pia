@@ -43,6 +43,7 @@ fnewport()						# Change port forwarded.
 	NEWPORT=1
 	PORTFORWARD=1
 	rm -rf $VPNPATH/client_id
+	head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id
 }
 
 ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
@@ -194,7 +195,7 @@ read -p " ["$BOLD$BLUE">"$RESET"]" SERVERNUM
 SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
 clear
-echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $SERVERNAME""..."
+echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $SERVERNAME, Please wait..."
 
 if [ $ARCH -gt 0 ];then
 	cd $VPNPATH && openvpn --config $SERVER --daemon
@@ -204,7 +205,7 @@ fi
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
-	echo -e " [$BOLD$RED"'X'"$RESET]Authorization Failed. Please check login details."
+	echo -e " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details."
 	rm -rf $VPNPATH/pass.txt
 	fvpnreset
 fi
@@ -214,13 +215,15 @@ if [ $VERBOSE -gt 0 ];then
 	echo -n $CYAN
 	if [ $ARCH -gt 0 ];then
 		journalctl /usr/bin/openvpn | tail -n 13 | cut -d ' ' -f 6- | grep -v WARN
+		echo
 	else
 		cat /var/log/pia.log
+		echo
 	fi
 	echo -n $RESET
 fi
 
-echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID ""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)"
+echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$GREEN""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)$RESET"
 
 if [ $DNS -gt 0 ];then
 	fdnschange
@@ -231,30 +234,35 @@ if [ $FIREWALL -gt 0 ];then
 fi
 
 if [ $VERBOSE -gt 0 ];then
-	sleep 1
-	NEWIP=$(curl -s -m 2 icanhazip.com)
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\t\t$CURRIP"
+	NEWIP=''
+	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
+		NEWIP=$(curl -s -m 4 icanhazip.com)
+	done
+	
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\t\t$RED$CURRIP$RESET"
 	if [ $(echo $NEWIP | wc -c) -lt 6 ];then
-		echo -e " [$BOLD$RED"'X'"$RESET]Failed to get new IP!"
+		echo -e " [$BOLD$RED"'X'"$RESET] Failed to get new IP!"
 	else
-		echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\t$NEWIP"
+		echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\t$GREEN$BOLD$NEWIP$RESET"
 	fi
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
 	if [ $NEWPORT -gt 0 ]; then
+		CLIENTID=$(cat $VPNPATH/client_id)
 		echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
+		echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$CLIENTID$RESET"
 	fi
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Attempting to forward a port.."
 	fforward
 	if [ $(echo $FORWARDEDPORT | wc -c) -gt 3 ] &>/dev/null;then
-		echo -e " [$BOLD$GREEN"'*'"$RESET] Port $FORWARDEDPORT has been forwarded to you."
+		echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
 	else
 		echo -e " [$BOLD$RED"'X'"$RESET]Port forwarding failed."
 		echo -e " [$BOLD$RED"'X'"$RESET]Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
 fi
 
-echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press ENTER to shut down."
+echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press $BLUE""ENTER$RESET to shut down."
 read -p "" WAITVAR
 fvpnreset
