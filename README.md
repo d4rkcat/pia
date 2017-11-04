@@ -33,5 +33,5 @@ Usage
 	-h	- Display this help.
 
 	Examples: 
-	pia -dps 24 - Change DNS, forward a port and connect to Switzerland.
+	pia -dps 24 	- Change DNS, forward a port and connect to Switzerland.
 	pia -nfv	- Forward a new port, run firewall and be verbose.

@@ -229,15 +229,20 @@ fi
 if [ $VERBOSE -gt 0 ];then
 	NEWIP=''
 	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
+		sleep 0.2
 		NEWIP=$(curl -s -m 4 icanhazip.com)
 	done
+
+	WHOISOLD="$(whois $CURRIP)"
+	WHOISNEW="$(whois $NEWIP)"
+	COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
+	COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
+	DESCROLD="$(echo "$WHOISOLD" | grep descr)"
+	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"
 	
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\t\t$RED$CURRIP$RESET"
-	if [ $(echo $NEWIP | wc -c) -lt 6 ];then
-		echo -e " [$BOLD$RED"'X'"$RESET] Failed to get new IP!"
-	else
-		echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\t$GREEN$BOLD$NEWIP$RESET"
-	fi
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\n$RED$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\n$GREEN$BOLD$NEWIP\n$COUNTRYNEW\n$DESCRNEW$RESET\n"
+
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
