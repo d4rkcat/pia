@@ -54,7 +54,7 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 	echo -e " ["$BOLD$GREEN"*"$RESET"]"" $(ufw enable 2>/dev/null)"
 }
 
-fhelp()							# Help function.
+fhelp()						# Help function.
 {
 	echo """Usage: ./pia.sh [Options]
 	-u	- Update PIA openvpn files before connecting.
@@ -77,7 +77,7 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	exit 0
 }
 
-fdnschange()					# Change DNS servers to PIA.
+fdnschange()						# Change DNS servers to PIA.
 {
 	echo -e " ["$BOLD$GREEN"*"$RESET"]"" Changed DNS to PIA servers."
 	cp /etc/resolv.conf /etc/resolv.conf.bak
@@ -88,13 +88,13 @@ nameserver 209.222.18.218
 	cp /etc/resolv.conf.pia /etc/resolv.conf
 }
 
-fdnsrestore()					# Revert to original DNS servers.
+fdnsrestore()						# Revert to original DNS servers.
 {
 	echo -e " ["$BOLD$GREEN"*"$RESET"]"" Restored DNS servers."
 	cp /etc/resolv.conf.bak /etc/resolv.conf
 }
 
-flist()							# List available servers
+flist()						# List available servers
 {
 	if [ ! -f $VPNPATH/servers ];then
 		fupdate
@@ -102,7 +102,7 @@ flist()							# List available servers
 	for i in $(seq $(cat $VPNPATH/servers | wc -l));do echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET " && cat $VPNPATH/servers | head -n $i | tail -n 1 | cut -d '.' -f 1;done
 }
 
-fchecklog()
+fchecklog()						# Check openvpn logs to get connection state
 {
 	LOGRETURN=0
 	VCONNECT=''
@@ -118,6 +118,7 @@ fchecklog()
 	done
 }
 
+						# Colour codes for terminal
 BOLD=$(tput bold)
 BLUE=$(tput setf 1)
 GREEN=$(tput setf 2)
@@ -125,15 +126,20 @@ CYAN=$(tput setf 3)
 RED=$(tput setf 4)
 RESET=$(tput sgr0)
 
-	# This is where we will store PIA openVPN files and user config
+						# This is where we will store PIA openVPN files and user config
 VPNPATH='/etc/openvpn'
 
+						# Check if user is root and OS is Arch
 if [ $(id -u) != 0 ];then echo -e " ["$BOLD$RED"X"$RESET"]"" Script must be run as root." && exit;fi
+if [ $(uname -r | grep ARCH | wc -c) -lt 1 ];then echo -e " ["$BOLD$RED"X"$RESET"]"" Script only designed for Arch Linux." && exit;fi
 
+						# Check for missing dependencies and install
 command -v openvpn >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" openvpn required, installing..";pacman -S openvpn; }
 command -v ufw >/dev/null 2>&1 || { echo >&2 " ["$BOLD$GREEN"*"$RESET"]"" ufw required, installing..";pacman -S ufw; }
 
 if [ ! -d $VPNPATH ];then mkdir $VPNPATH;fi
+
+						# Check for existence of credentials file
 if [ ! -f $VPNPATH/pass.txt ];then
 	fupdate
 	read -p " ["$BOLD$BLUE">"$RESET"]"" Please enter your username: " USERNAME
@@ -172,6 +178,7 @@ SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 clear
 echo -e " ["$BOLD$BLUE">"$RESET"]"" Connecting to $SERVER""..."
 OVPNFILE=$SERVER".ovpn"
+
 cd $VPNPATH && openvpn --config $OVPNFILE --daemon
 
 fchecklog
