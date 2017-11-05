@@ -1,11 +1,10 @@
 #!/bin/bash
 
-## pia Copyright 2017, d4rkcat (thed4rkcat@yandex.com)
+## pia Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
 #
 ## This program is free software: you can redistribute it and/or modify
-## it under the terms of the GNU General Public License as published by
-## the Free Software Foundation, either version 3 of the License, or
-## (at your option) any later version.
+## it under the terms of the GNU General Public License Version 2 as published by
+## the Free Software Foundation.
 #
 ## This program is distributed in the hope that it will be useful,
 ## but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -21,7 +20,7 @@ fupdate()						# Update the PIA openvpn files.
 	cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip
 	cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
-	for file in $VPNPATH/*.ovpn;do echo 'auth-nocache' >> $file;done
+	for file in $VPNPATH/*.ovpn;do echo -e "auth-nocache\nlog /var/log/pia.log" >> $file;done
 	for file in $VPNPATH/*.ovpn;do echo $(basename $file) >> $VPNPATH/servers;done
 	echo -e " [$BOLD$GREEN"'*'"$RESET] Files Updated."
 }
@@ -30,14 +29,17 @@ fforward()						# Forward a port.
 {
 	sleep 1
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	FORWARDEDPORT=$(curl -s -m 8 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
+	while [ $(echo $FORWARDEDPORT | wc -c) -lt 3 ] 2>/dev/null;do
+		FORWARDEDPORT=$(curl -s -m 8 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
+		sleep 0.2
+	done
 }
 
 fnewport()						# Change port forwarded.
 {
 	NEWPORT=1
 	PORTFORWARD=1
-	rm -rf $VPNPATH/client_id
+	mv $VPNPATH/client_id $VPNPATH/client_id.bak
 	head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id
 }
 
@@ -75,7 +77,7 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
-	kill -s SIGINT "$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)" &>/dev/null
+	kill -s SIGINT "$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')" &>/dev/null
 	if [ $FIREWALL -gt 0 ];then
 		echo -e " [$BOLD$GREEN"'*'"$RESET] $(ufw disable 2>/dev/null)"
 	fi
@@ -105,7 +107,24 @@ flist()						# List available servers
 	if [ ! -f $VPNPATH/servers ];then
 		fupdate
 	fi
-	for i in $(seq $(cat $VPNPATH/servers | wc -l));do echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET " && cat $VPNPATH/servers | head -n $i | tail -n 1 | cut -d '.' -f 1;done
+	
+	echo " [$BOLD$GREEN"'*'"$RESET] $BOLD$GREEN""green$RESET servers allow port forwarding"
+	for i in $(seq $(cat $VPNPATH/servers | wc -l));do
+		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
+		SERVERNAME=$(cat $VPNPATH/servers | head -n $i | tail -n 1 | cut -d '.' -f 1)
+		case $SERVERNAME in
+			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Toronto") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Montreal") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Romania") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Israel") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Sweden") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"France") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Germany") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			*) echo $SERVERNAME;;
+		esac
+	done
 }
 
 fchecklog()						# Check openvpn logs to get connection state
@@ -121,6 +140,21 @@ fchecklog()						# Check openvpn logs to get connection state
 		fi
 		sleep 0.2
 	done
+}
+
+fgetint()						# Check if user supplied server number is valid
+{
+	if [[ $SERVERNUM =~ ^[0-9]+$ ]];then
+		if [ $SERVERNUM -gt $(cat $VPNPATH/servers | wc -l) ];then
+			flist
+			echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not a valid server number!"
+			exit
+		fi
+	else
+		flist
+		echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not an integer!"
+		exit
+	fi
 }
 
 						# Colour codes for terminal
@@ -147,17 +181,16 @@ SERVERNUM=0
 if [ $(id -u) != 0 ];then echo -e " [$BOLD$RED"'X'"$RESET] Script must be run as root." && fhelp;fi
 
 						# Check for missing dependencies and install
-						
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";pacman -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";pacman -S ufw; }
 else
-	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET] OS not detected as Arch or Debian, script will not work for you.";exit; }
+	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET] OS not detected as Arch or Debian, Please install openvpn and ufw packages and retry.";exit; }
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";apt-get install openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";apt-get install ufw; }
 fi
 
-if [ ! -d $VPNPATH ];then mkdir $VPNPATH;fi
+if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
 						# Check for existence of credentials file
 if [ ! -f $VPNPATH/pass.txt ];then
@@ -181,7 +214,7 @@ do
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		v) VERBOSE=1;CURRIP=$(curl -s icanhazip.com);;
-		s) SERVERNUM=$OPTARG;;
+		s) SERVERNUM=$OPTARG;fgetint;;
 		*) fhelp;;
 	esac
 done
@@ -200,7 +233,7 @@ clear
 echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $SERVERNAME, Please wait..."
 
 
-cd $VPNPATH && openvpn --config $SERVER --daemon --log /var/log/pia.log
+cd $VPNPATH && openvpn --config $SERVER --daemon
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
@@ -216,7 +249,7 @@ if [ $VERBOSE -gt 0 ];then
 	echo $RESET
 fi
 
-echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN""$(ps aux | grep openvpn | grep root | awk '{print $2}' | head -n 1)$RESET"
+echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN""$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')$RESET"
 
 if [ $DNS -gt 0 ];then
 	fdnschange
@@ -246,6 +279,7 @@ if [ $VERBOSE -gt 0 ];then
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
+	fforward
 	if [ $NEWPORT -gt 0 ]; then
 		echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
 		echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
@@ -256,7 +290,6 @@ if [ $PORTFORWARD -gt 0 ];then
 		fi
 	fi
 
-	fforward
 	if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
 		echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
 	else
