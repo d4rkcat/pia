@@ -30,7 +30,7 @@ fforward()						# Forward a port.
 	sleep 1
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
 	while [ $(echo $FORWARDEDPORT | wc -c) -lt 3 ] 2>/dev/null;do
-		FORWARDEDPORT=$(curl -s -m 8 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
+		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 		sleep 0.2
 	done
 }
@@ -45,10 +45,10 @@ fnewport()						# Change port forwarded.
 
 ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 {
-	ufw allow out on tun0 &>/dev/null
-	ufw allow in on tun0 &>/dev/null
 	ufw default deny outgoing &>/dev/null
 	ufw default deny incoming &>/dev/null
+	ufw allow out on tun0 &>/dev/null
+	ufw allow in on tun0 &>/dev/null
 	echo -e " [$BOLD$GREEN"'*'"$RESET] $(ufw enable 2>/dev/null)"
 }
 
@@ -132,10 +132,10 @@ fchecklog()						# Check openvpn logs to get connection state
 	LOGRETURN=0
 	while [ $LOGRETURN -eq 0 ]; do
 		VCONNECT=$(cat /var/log/pia.log)
-		if [ $(echo $VCONNECT | grep 'Initialization Sequence Completed' | wc -c) -gt 1	];then
+		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1	];then
 			LOGRETURN=1
 		fi
-		if [ $(echo $VCONNECT | grep 'auth-failure' | wc -c) -gt 1	];then
+		if [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1	];then
 			LOGRETURN=2
 		fi
 		sleep 0.2
@@ -145,9 +145,10 @@ fchecklog()						# Check openvpn logs to get connection state
 fgetint()						# Check if user supplied server number is valid
 {
 	if [[ $SERVERNUM =~ ^[0-9]+$ ]];then
-		if [ $SERVERNUM -gt $(cat $VPNPATH/servers | wc -l) ];then
+		MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+		if [ $SERVERNUM -gt $MAXSERVERS ];then
 			flist
-			echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not a valid server number!"
+			echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is too high! Maximum $MAXSERVERS servers to choose from."
 			exit
 		fi
 	else
@@ -171,6 +172,7 @@ VPNPATH='/etc/openvpn/pia'
 						# Initialize switches
 PORTFORWARD=0
 NEWPORT=0
+NOPORT=0
 DNS=0
 FORWARDEDPORT=0
 VERBOSE=0
@@ -213,7 +215,7 @@ do
 		n) fnewport;;
 		d) DNS=1;;
 		f) FIREWALL=1;;
-		v) VERBOSE=1;CURRIP=$(curl -s icanhazip.com);;
+		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
 		s) SERVERNUM=$OPTARG;fgetint;;
 		*) fhelp;;
 	esac
@@ -261,9 +263,12 @@ fi
 
 if [ $VERBOSE -gt 0 ];then
 	NEWIP=''
+	CURRIP=$(cat /tmp/ip.txt)
+	rm /tmp/ip.txt
+	echo -e " [$BOLD$GREEN"'*'"$RESET] Checking new IP.."
+	sleep 1
 	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
-		sleep 0.2
-		NEWIP=$(curl -s -m 4 icanhazip.com)
+		NEWIP=$(curl -s -m 2 icanhazip.com)
 	done
 
 	WHOISOLD="$(whois $CURRIP)"
@@ -278,26 +283,40 @@ if [ $VERBOSE -gt 0 ];then
 
 fi
 
-if [ $PORTFORWARD -gt 0 ];then
-	fforward
-	if [ $NEWPORT -gt 0 ]; then
-		echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
-		echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
-	else
-		if [ $VERBOSE -gt 0 ];then
-			echo -e " [$BOLD$BLUE"'>'"$RESET] Attempting to forward a port.."
-			echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+case $SERVERNAME in
+	"Netherlands") fforward;;
+	"Switzerland") fforward;;
+	"CA_Toronto") fforward;;
+	"CA_Montreal") fforward;;
+	"Romania") fforward;;
+	"Israel") fforward;;
+	"Sweden") fforward;;
+	"France") fforward;;
+	"Germany") fforward;;
+	*) NOPORT=1;;
+esac
+
+if [ $NOPORT -eq 0 ];then
+	if [ $PORTFORWARD -gt 0 ];then
+		if [ $NEWPORT -gt 0 ]; then
+			echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
+			echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+		else
+			if [ $VERBOSE -gt 0 ];then
+				echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+			fi
+		fi
+
+		if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
+			echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
+		else
+			echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding failed."
 		fi
 	fi
-
-	if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
-		echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
-	else
-		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding failed."
-		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
-	fi
+else
+	echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 fi
 
-echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press $BLUE""ENTER$RESET to shut down."
+echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press $RED""ENTER$RESET or $RED""Ctrl+C$RESET to shut down."
 read -p "" WAITVAR
 fvpnreset
