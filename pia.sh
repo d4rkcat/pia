@@ -14,9 +14,36 @@
 
 fupdate()						# Update the PIA openvpn files.
 {
+	CONFIGDEFAULT="https://www.privateinternetaccess.com/openvpn/openvpn.zip"
+	CONFIGSTRONG="https://www.privateinternetaccess.com/openvpn/openvpn-strong.zip"
+	CONFIGIP="https://www.privateinternetaccess.com/openvpn/openvpn-ip.zip"
+	CONFIGTCP="https://www.privateinternetaccess.com/openvpn/openvpn-tcp.zip"
+	CONFIGTCPSTRONG="https://www.privateinternetaccess.com/openvpn/openvpn-strong-tcp.zip"
+
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Please choose configuration:"
+	echo " $BOLD$RED[$RESET""1""$BOLD$RED]$RESET Default UDP (aes-128-cbc sha1 rsa-2048)"
+	echo " $BOLD$RED[$RESET""2""$BOLD$RED]$RESET Strong UDP (aes-256-cbc sha256 rsa-4096)"
+	echo " $BOLD$RED[$RESET""3""$BOLD$RED]$RESET Direct IP (aes-128-cbc sha1 rsa-2048)"
+	echo " $BOLD$RED[$RESET""4""$BOLD$RED]$RESET Default TCP (aes-128-cbc sha1 rsa-2048)"
+	echo " $BOLD$RED[$RESET""5""$BOLD$RED]$RESET Strong TCP (aes-256-cbc sha256 rsa-4096)"
+	read -p " ["$BOLD$BLUE">"$RESET"] " CONFIGNUM
+
+	if [[ $CONFIGNUM =~ ^[0-9]+$ && $CONFIGNUM -lt 6 && $CONFIGNUM -gt 0 ]];then
+		case $CONFIGNUM in
+			1) DOWNURL=$CONFIGDEFAULT;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Default UDP configuration.";;
+			2) DOWNURL=$CONFIGSTRONG;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Strong UDP configuration.";;
+			3) DOWNURL=$CONFIGIP;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Direct IP configuration.";;
+			4) DOWNURL=$CONFIGTCP;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Default TCP configuration.";;
+			5) DOWNURL=$CONFIGTCPSTRONG;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Strong TCP configuration.";;
+		esac
+	else
+		echo " [$BOLD$RED"'X'"$RESET] $CONFIGNUM is not a valid option! 1-5 only."
+		exit
+	fi
+	
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Updating PIA openvpn files."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
-	wget -q https://www.privateinternetaccess.com/openvpn/openvpn-strong.zip -O $VPNPATH/pia.zip
+	wget -q $DOWNURL -O $VPNPATH/pia.zip
 	cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip
 	cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
