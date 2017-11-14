@@ -159,10 +159,10 @@ fchecklog()						# Check openvpn logs to get connection state
 	LOGRETURN=0
 	while [ $LOGRETURN -eq 0 ]; do
 		VCONNECT=$(cat /var/log/pia.log)
-		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1	];then
+		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1 ];then
 			LOGRETURN=1
 		fi
-		if [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1	];then
+		if [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1 ];then
 			LOGRETURN=2
 		fi
 		sleep 0.2
@@ -323,8 +323,9 @@ case $SERVERNAME in
 	*) NOPORT=1;;
 esac
 
-if [ $NOPORT -eq 0 ];then
-	if [ $PORTFORWARD -gt 0 ];then
+
+if [ $PORTFORWARD -gt 0 ];then
+	if [ $NOPORT -eq 0 ];then
 		if [ $NEWPORT -gt 0 ]; then
 			echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
 			echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
@@ -339,9 +340,9 @@ if [ $NOPORT -eq 0 ];then
 		else
 			echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding failed."
 		fi
+	else
+		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
-else
-	echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 fi
 
 echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press $RED""ENTER$RESET or $RED""Ctrl+C$RESET to shut down."
