@@ -90,6 +90,7 @@ fhelp()						# Help function.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
 	-f	- Enable firewall to block all traffic apart from tun0
+	-m	- Enable PIA MACE ad blocking.
 	-v	- Display verbose information.
 	-h	- Display this help.
 
@@ -121,6 +122,12 @@ nameserver 209.222.18.222
 nameserver 209.222.18.218
 ''' > /etc/resolv.conf.pia
 	cp /etc/resolv.conf.pia /etc/resolv.conf
+}
+
+fmace()						# Enable PIA MACE DNS based ad blocking
+{
+	curl -s "http://209.222.18.222:1111/"
+	echo -e " [$BOLD$GREEN"'*'"$RESET] PIA MACE enabled."
 }
 
 fdnsrestore()						# Revert to original DNS servers.
@@ -200,6 +207,7 @@ VPNPATH='/etc/openvpn/pia'
 PORTFORWARD=0
 NEWPORT=0
 NOPORT=0
+MACE=0
 DNS=0
 FORWARDEDPORT=0
 VERBOSE=0
@@ -232,7 +240,7 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-while getopts "lhupndfvs:" opt
+while getopts "lhupnmdfvs:" opt
 do
  	case $opt in
  		l) flist;exit;;
@@ -240,6 +248,7 @@ do
 		u) fupdate;;
 		p) PORTFORWARD=1;;
 		n) fnewport;;
+		m) MACE=1;DNS=1;;
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
@@ -282,6 +291,10 @@ echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on P
 
 if [ $DNS -gt 0 ];then
 	fdnschange
+fi
+
+if [ $MACE -gt 0 ];then
+	fmace
 fi
 
 if [ $FIREWALL -gt 0 ];then
