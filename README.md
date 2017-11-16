@@ -27,13 +27,13 @@ Usage
 ==========
 	Usage: pia [Options]
 
-	-s	- Server number to connect to
+	-s	- Server number to connect to.
 	-l	- List available servers.
 	-u	- Update PIA openvpn files before connecting.
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
-	-f	- Enable firewall to block all traffic apart from tun0
+	-f	- Enable firewall to block all traffic apart from tun0.
 	-m	- Enable PIA MACE ad blocking.
 	-v	- Display verbose information.
 	-h	- Display this help.

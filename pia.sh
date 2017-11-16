@@ -83,13 +83,13 @@ fhelp()						# Help function.
 {
 	echo """Usage: ./pia.sh [Options]
 
-	-s	- Server number to connect to
+	-s	- Server number to connect to.
 	-l	- List available servers.
 	-u	- Update PIA openvpn files before connecting.
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
-	-f	- Enable firewall to block all traffic apart from tun0
+	-f	- Enable firewall to block all traffic apart from tun0.
 	-m	- Enable PIA MACE ad blocking.
 	-v	- Display verbose information.
 	-h	- Display this help.
@@ -178,16 +178,16 @@ fchecklog()						# Check openvpn logs to get connection state
 
 fgetint()						# Check if user supplied server number is valid
 {
-	if [[ $SERVERNUM =~ ^[0-9]+$ ]];then
-		MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+	MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+	if [[ $SERVERNUM =~ ^[0-9]+$ && $SERVERNUM -gt 0 ]];then
 		if [ $SERVERNUM -gt $MAXSERVERS ];then
 			flist
-			echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is too high! Maximum $MAXSERVERS servers to choose from."
+			echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not valid! 1-$MAXSERVERS only."
 			exit
 		fi
 	else
 		flist
-		echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not an integer!"
+		echo " [$BOLD$RED"'X'"$RESET] $SERVERNUM is not valid! 1-$MAXSERVERS only."
 		exit
 	fi
 }
@@ -267,6 +267,7 @@ fi
 
 SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
+fgetint
 clear
 echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $SERVERNAME, Please wait..."
 
@@ -320,24 +321,21 @@ if [ $VERBOSE -gt 0 ];then
 	
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\n$RED$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\n$GREEN$BOLD$NEWIP\n$COUNTRYNEW\n$DESCRNEW$RESET\n"
-
 fi
 
-case $SERVERNAME in
-	"Netherlands") fforward;;
-	"Switzerland") fforward;;
-	"CA_Toronto") fforward;;
-	"CA_Montreal") fforward;;
-	"Romania") fforward;;
-	"Israel") fforward;;
-	"Sweden") fforward;;
-	"France") fforward;;
-	"Germany") fforward;;
-	*) NOPORT=1;;
-esac
-
-
 if [ $PORTFORWARD -gt 0 ];then
+	case $SERVERNAME in
+		"Netherlands") fforward;;
+		"Switzerland") fforward;;
+		"CA_Toronto") fforward;;
+		"CA_Montreal") fforward;;
+		"Romania") fforward;;
+		"Israel") fforward;;
+		"Sweden") fforward;;
+		"France") fforward;;
+		"Germany") fforward;;
+		*) NOPORT=1;;
+	esac
 	if [ $NOPORT -eq 0 ];then
 		if [ $NEWPORT -gt 0 ]; then
 			echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
