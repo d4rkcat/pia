@@ -261,20 +261,25 @@ SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
 
 if [ $VERBOSE -gt 0 ];then
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Testing latency to $SERVERNAME..."
 	DOMAIN=$(cat $VPNPATH/$SERVER | grep .com | awk '{print $2}')
-	PING=$(ping -c 1 $DOMAIN | grep time= | awk '{print $8}' | cut -d '=' -f 2)
+	PING=$(ping -c 3 $DOMAIN | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
 	PINGINT=$(echo $PING | cut -d '.' -f 1)
 	SPEEDCOLOR=$BOLD$GREEN
+	SPEEDNAME="fast"
 	if [ $PINGINT -gt 40 ];then
 		SPEEDCOLOR=$BOLD$CYAN
+		SPEEDNAME="medium"
 	fi
 	if [ $PINGINT -gt 80 ];then
 		SPEEDCOLOR=$BOLD$BLUE
+		SPEEDNAME="slow"
 	fi
 	if [ $PINGINT -gt 160 ];then
 		SPEEDCOLOR=$BOLD$RED
+		SPEEDNAME="very slow"
 	fi
-	echo -e " [$BOLD$GREEN"'*'"$RESET] $SERVERNAME Latency: $SPEEDCOLOR$PING ms$RESET"
+	echo -e " [$BOLD$GREEN"'*'"$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET"
 fi
 
 trap fvpnreset INT
@@ -350,7 +355,13 @@ if [ $VERBOSE -gt 0 ];then
 	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"
 	
 	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\n$RED$BOLD$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\n$GREEN$BOLD$NEWIP\n$COUNTRYNEW\n$DESCRNEW$RESET\n"
+	echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\n$GREEN$BOLD$NEWIP$RESET"
+	if [ $(echo $COUNTRYNEW | wc -c) -gt 3 ];then
+		echo "$BOLD$GREEN$COUNTRYNEW$RESET"
+	fi
+	if [ $(echo "$DESCRNEW" | wc -c) -gt 3 ];then
+		echo -e "$BOLD$GREEN$DESCRNEW$RESET"
+	fi
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
@@ -372,7 +383,7 @@ if [ $PORTFORWARD -gt 0 ];then
 			echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
 		else
 			if [ $VERBOSE -gt 0 ];then
-				echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+				echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
 			fi
 		fi
 
