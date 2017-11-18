@@ -20,28 +20,28 @@ fupdate()						# Update the PIA openvpn files.
 	CONFIGTCP="https://www.privateinternetaccess.com/openvpn/openvpn-tcp.zip"
 	CONFIGTCPSTRONG="https://www.privateinternetaccess.com/openvpn/openvpn-strong-tcp.zip"
 
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Please choose configuration:"
+	echo " [$BOLD$BLUE>$RESET] Please choose configuration:"
 	echo " $BOLD$RED[$RESET""1""$BOLD$RED]$RESET Default UDP (aes-128-cbc sha1 rsa-2048)"
 	echo " $BOLD$RED[$RESET""2""$BOLD$RED]$RESET Strong UDP (aes-256-cbc sha256 rsa-4096)"
 	echo " $BOLD$RED[$RESET""3""$BOLD$RED]$RESET Direct IP (aes-128-cbc sha1 rsa-2048)"
 	echo " $BOLD$RED[$RESET""4""$BOLD$RED]$RESET Default TCP (aes-128-cbc sha1 rsa-2048)"
 	echo " $BOLD$RED[$RESET""5""$BOLD$RED]$RESET Strong TCP (aes-256-cbc sha256 rsa-4096)"
-	read -p " ["$BOLD$BLUE">"$RESET"] " CONFIGNUM
+	read -p " [$BOLD$BLUE>$RESET] " CONFIGNUM
 
 	if [[ $CONFIGNUM =~ ^[0-9]+$ && $CONFIGNUM -lt 6 && $CONFIGNUM -gt 0 ]];then
 		case $CONFIGNUM in
-			1) DOWNURL=$CONFIGDEFAULT;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Default UDP configuration.";;
-			2) DOWNURL=$CONFIGSTRONG;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Strong UDP configuration.";;
-			3) DOWNURL=$CONFIGIP;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Direct IP configuration.";;
-			4) DOWNURL=$CONFIGTCP;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Default TCP configuration.";;
-			5) DOWNURL=$CONFIGTCPSTRONG;echo -e " [$BOLD$GREEN"'*'"$RESET] Selected Strong TCP configuration.";;
+			1) DOWNURL=$CONFIGDEFAULT;echo " [$BOLD$GREEN*$RESET] Selected Default UDP configuration.";;
+			2) DOWNURL=$CONFIGSTRONG;echo " [$BOLD$GREEN*$RESET] Selected Strong UDP configuration.";;
+			3) DOWNURL=$CONFIGIP;echo " [$BOLD$GREEN*$RESET] Selected Direct IP configuration.";;
+			4) DOWNURL=$CONFIGTCP;echo " [$BOLD$GREEN*$RESET] Selected Default TCP configuration.";;
+			5) DOWNURL=$CONFIGTCPSTRONG;echo " [$BOLD$GREEN*$RESET] Selected Strong TCP configuration.";;
 		esac
 	else
 		echo " [$BOLD$RED"'X'"$RESET] $CONFIGNUM is not a valid option! 1-5 only."
 		exit 1
 	fi
 	
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Updating PIA openvpn files."
+	echo " [$BOLD$BLUE>$RESET] Updating PIA openvpn files..."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
 	wget -q $DOWNURL -O $VPNPATH/pia.zip
 	cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip
@@ -49,7 +49,7 @@ fupdate()						# Update the PIA openvpn files.
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
 	for file in $VPNPATH/*.ovpn;do echo -e "auth-nocache\nlog /var/log/pia.log" >> $file;done
 	for file in $VPNPATH/*.ovpn;do echo $(basename $file) >> $VPNPATH/servers;done
-	echo -e " [$BOLD$GREEN"'*'"$RESET] Files Updated."
+	echo " [$BOLD$GREEN*$RESET] Files Updated."
 }
 
 fforward()						# Forward a port.
@@ -73,7 +73,7 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 	ufw default deny incoming &>/dev/null
 	ufw allow out on tun0 &>/dev/null
 	ufw allow in on tun0 &>/dev/null
-	echo -e " [$BOLD$GREEN"'*'"$RESET] $(ufw enable 2>/dev/null)"
+	echo " [$BOLD$GREEN*$RESET] $(ufw enable 2>/dev/null)"
 }
 
 fhelp()						# Help function.
@@ -101,17 +101,17 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
-	kill -s SIGINT "$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')" &>/dev/null
+	kill -s SIGINT $VPNPID &>/dev/null
 	if [ $FIREWALL -gt 0 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET] $(ufw disable 2>/dev/null)"
+		echo " [$BOLD$GREEN*$RESET] $(ufw disable 2>/dev/null)"
 	fi
-	echo " [$BOLD$GREEN"'*'"$RESET] VPN Disconnected."
+	echo " [$BOLD$GREEN*$RESET] VPN Disconnected."
 	exit 0
 }
 
 fdnschange()						# Change DNS servers to PIA.
 {
-	echo -e " [$BOLD$GREEN"'*'"$RESET] Changed DNS to PIA servers."
+	echo " [$BOLD$GREEN*$RESET] Changed DNS to PIA servers."
 	cp /etc/resolv.conf /etc/resolv.conf.bak
 	echo '''#PIA DNS Servers
 nameserver 209.222.18.222
@@ -123,12 +123,12 @@ nameserver 209.222.18.218
 fmace()						# Enable PIA MACE DNS based ad blocking
 {
 	curl -s "http://209.222.18.222:1111/"
-	echo -e " [$BOLD$GREEN"'*'"$RESET] PIA MACE enabled."
+	echo " [$BOLD$GREEN*$RESET] PIA MACE enabled."
 }
 
 fdnsrestore()						# Revert to original DNS servers.
 {
-	echo -e " [$BOLD$GREEN"'*'"$RESET] Restored DNS servers."
+	echo " [$BOLD$GREEN*$RESET] Restored DNS servers."
 	cp /etc/resolv.conf.bak /etc/resolv.conf
 }
 
@@ -138,7 +138,7 @@ flist()						# List available servers
 		fupdate
 	fi
 	
-	echo " [$BOLD$GREEN"'*'"$RESET] $BOLD$GREEN""Green$RESET servers allow port forwarding."
+	echo " [$BOLD$GREEN*$RESET] $BOLD$GREEN""Green$RESET servers allow port forwarding."
 	for i in $(seq $(cat $VPNPATH/servers | wc -l));do
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
 		SERVERNAME=$(cat $VPNPATH/servers | head -n $i | tail -n 1 | cut -d '.' -f 1)
@@ -207,16 +207,16 @@ FIREWALL=0
 SERVERNUM=0
 
 						# Check if user is root
-if [ $(id -u) != 0 ];then echo -e " [$BOLD$RED"'X'"$RESET] Script must be run as root." && exit 1;fi
+if [ $(id -u) != 0 ];then echo " [$BOLD$RED"'X'"$RESET] Script must be run as root." && exit 1;fi
 
 						# Check for missing dependencies and install
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";pacman --noconfirm -S openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";pacman --noconfirm -S ufw; }
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing..";pacman --noconfirm -S openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing..";pacman --noconfirm -S ufw; }
 else
 	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET] OS not detected as Arch or Debian, Please install openvpn and ufw packages for your system and retry.";exit 1; }
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] openvpn required, installing..";apt-get install -y openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN"'*'"$RESET] ufw required, installing..";apt-get install -y ufw; }
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing..";apt-get install -y openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing..";apt-get install -y ufw; }
 fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
@@ -224,8 +224,8 @@ if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 						# Check for existence of credentials file
 if [ ! -f $VPNPATH/pass.txt ];then
 	fupdate
-	read -p " [$BOLD$BLUE"'>'"$RESET] Please enter your username: " USERNAME
-	read -s -p " [$BOLD$BLUE"'>'"$RESET] Please enter your password: " PASSWORD
+	read -p " [$BOLD$BLUE>$RESET] Please enter your username: " USERNAME
+	read -sp " [$BOLD$BLUE>$RESET] Please enter your password: " PASSWORD
 	echo -e "$USERNAME\n$PASSWORD" > $VPNPATH/pass.txt
 	echo
 	chmod 400 $VPNPATH/pass.txt
@@ -250,9 +250,9 @@ do
 done
 
 if [ $SERVERNUM -lt 1 ];then
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Please choose a server: "
+	echo " [$BOLD$BLUE>$RESET] Please choose a server: "
 	flist
-	read -p " ["$BOLD$BLUE">"$RESET"]" SERVERNUM
+	read -p " [$BOLD$BLUE>$RESET] " SERVERNUM
 	clear
 fi
 
@@ -261,7 +261,7 @@ SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
 SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
 
 if [ $VERBOSE -gt 0 ];then
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Testing latency to $SERVERNAME..."
+	echo " [$BOLD$BLUE>$RESET] Testing latency to $SERVERNAME..."
 	DOMAIN=$(cat $VPNPATH/$SERVER | grep .com | awk '{print $2}')
 	PING=$(ping -c 3 $DOMAIN | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
 	PINGINT=$(echo $PING | cut -d '.' -f 1)
@@ -279,69 +279,58 @@ if [ $VERBOSE -gt 0 ];then
 		SPEEDCOLOR=$BOLD$RED
 		SPEEDNAME="very slow"
 	fi
-	echo -e " [$BOLD$GREEN"'*'"$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET"
+	echo " [$BOLD$GREEN*$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET"
 fi
 
 trap fvpnreset INT
-echo -e " [$BOLD$BLUE"'>'"$RESET] Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
+echo " [$BOLD$BLUE>$RESET] Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
 cd $VPNPATH && openvpn --config $SERVER --daemon
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
-	echo -e " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details."
+	echo " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details."
 	rm -rf $VPNPATH/pass.txt
 	exit 1
 fi
 
-echo -e " [$BOLD$GREEN"'*'"$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN""$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')$RESET"
-
-if [ $DNS -gt 0 ];then
-	fdnschange
-fi
-
-if [ $MACE -gt 0 ];then
-	fmace
-fi
-
-if [ $FIREWALL -gt 0 ];then
-	ffirewall
-fi
+VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
+echo " [$BOLD$GREEN*$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET"
 
 if [ $VERBOSE -gt 0 ];then
-	echo -e " [$BOLD$GREEN"'*'"$RESET] OpenVPN Logs:"
+	echo " [$BOLD$GREEN*$RESET] OpenVPN Logs:"
 	echo -n $CYAN
 	cat /var/log/pia.log
-	echo -e "$RESET [$BOLD$BLUE"'>'"$RESET] OpenVPN Settings:"
+	echo "$RESET [$BOLD$BLUE>$RESET] OpenVPN Settings:"
 	SETTINGS=$(cat $VPNPATH/$SERVER)
 	if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$GREEN UDP$RESET Protocol."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN UDP$RESET Protocol."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'proto tcp' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$CYAN TCP$RESET Protocol."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$CYAN TCP$RESET Protocol."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'ca ca.rsa.2048.crt' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$CYAN 2048 Bit RSA$RESET Certificate."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$CYAN 2048 Bit RSA$RESET Certificate."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'ca ca.rsa.4096.crt' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$GREEN 4096 Bit RSA$RESET Certificate."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN 4096 Bit RSA$RESET Certificate."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'cipher aes-128-cbc' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$CYAN 128 Bit AES-CBC$RESET Cipher."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$CYAN 128 Bit AES-CBC$RESET Cipher."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'cipher aes-256-cbc' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$GREEN 256 Bit AES-CBC$RESET Cipher."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN 256 Bit AES-CBC$RESET Cipher."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'auth sha1' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$CYAN SHA1$RESET Authentication."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$CYAN SHA1$RESET Authentication."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'auth sha256' | wc -c) -gt 3 ];then
-		echo -e " [$BOLD$GREEN"'*'"$RESET]$BOLD$GREEN SHA256$RESET Authentication."
+		echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN SHA256$RESET Authentication."
 	fi
 
 	NEWIP=''
 	CURRIP=$(cat /tmp/ip.txt)
 	rm /tmp/ip.txt
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Checking new IP.."
+	echo " [$BOLD$BLUE>$RESET] Checking new IP..."
 	sleep 1
 	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
 		NEWIP=$(curl -s -m 4 icanhazip.com)
@@ -354,14 +343,26 @@ if [ $VERBOSE -gt 0 ];then
 	DESCROLD="$(echo "$WHOISOLD" | grep descr)"
 	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"
 	
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Old IP:\n$RED$BOLD$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
-	echo -e " [$BOLD$BLUE"'>'"$RESET] Current IP:\n$GREEN$BOLD$NEWIP$RESET"
+	echo -e " [$BOLD$BLUE>$RESET] Old IP:\n$RED$BOLD$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
+	echo -e " [$BOLD$BLUE>$RESET] Current IP:\n$GREEN$BOLD$NEWIP$RESET"
 	if [ $(echo $COUNTRYNEW | wc -c) -gt 3 ];then
 		echo "$BOLD$GREEN$COUNTRYNEW$RESET"
 	fi
 	if [ $(echo "$DESCRNEW" | wc -c) -gt 3 ];then
-		echo -e "$BOLD$GREEN$DESCRNEW$RESET"
+		echo "$BOLD$GREEN$DESCRNEW$RESET"
 	fi
+fi
+
+if [ $DNS -gt 0 ];then
+	fdnschange
+fi
+
+if [ $MACE -gt 0 ];then
+	fmace
+fi
+
+if [ $FIREWALL -gt 0 ];then
+	ffirewall
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
@@ -379,24 +380,24 @@ if [ $PORTFORWARD -gt 0 ];then
 	esac
 	if [ $NOPORT -eq 0 ];then
 		if [ $NEWPORT -gt 0 ]; then
-			echo -e " [$BOLD$BLUE"'>'"$RESET] Changing identity.."
-			echo -e " [$BOLD$GREEN"'*'"$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+			echo " [$BOLD$BLUE>$RESET] Changing identity.."
+			echo " [$BOLD$GREEN*$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
 		else
 			if [ $VERBOSE -gt 0 ];then
-				echo -e " [$BOLD$BLUE"'>'"$RESET] Using identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
+				echo " [$BOLD$BLUE>$RESET] Forwarding port using identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
 			fi
 		fi
 
 		if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
-			echo -e " [$BOLD$GREEN"'*'"$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
+			echo " [$BOLD$GREEN*$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
 		else
-			echo -e " [$BOLD$RED"'X'"$RESET] $SERVERNAME failed to forward us a port!"
+			echo " [$BOLD$RED"'X'"$RESET] $SERVERNAME failed to forward us a port!"
 		fi
 	else
-		echo -e " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
+		echo " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
 fi
 
-echo -n -e " [$BOLD$GREEN"'*'"$RESET] VPN setup complete, press $BOLD$RED""ENTER$RESET or $BOLD$RED""Ctrl+C$RESET to shut down."
+echo -n " [$BOLD$GREEN*$RESET] VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
 read -p "" WAITVAR
 fvpnreset
