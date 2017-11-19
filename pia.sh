@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## pia Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
+## pia v0.2 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
 #
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License Version 2 as published by
@@ -48,7 +48,7 @@ fupdate()						# Update the PIA openvpn files.
 	cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done
 	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
 	for file in $VPNPATH/*.ovpn;do echo -e "auth-nocache\nlog /var/log/pia.log" >> $file;done
-	for file in $VPNPATH/*.ovpn;do echo $(basename $file) >> $VPNPATH/servers;done
+	for file in $VPNPATH/*.ovpn;do echo -n $(basename $file | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $file | grep .com | awk '{print $2}' >> $VPNPATH/servers;done
 	echo " [$BOLD$GREEN*$RESET] Files Updated."
 }
 
@@ -78,7 +78,7 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 
 fhelp()						# Help function.
 {
-	echo """Usage: ./pia.sh [Options]
+	echo """Usage: $(basename $0) [Options]
 
 	-s	- Server number to connect to.
 	-l	- List available servers.
@@ -88,6 +88,7 @@ fhelp()						# Help function.
 	-d	- Change DNS servers to PIA.
 	-f	- Enable firewall to block all traffic apart from tun0.
 	-m	- Enable PIA MACE ad blocking.
+	-k	- Enable internet killswitch.
 	-v	- Display verbose information.
 	-h	- Display this help.
 
@@ -102,8 +103,10 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 		fdnsrestore
 	fi
 	kill -s SIGINT $VPNPID &>/dev/null
-	if [ $FIREWALL -gt 0 ];then
+	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo " [$BOLD$GREEN*$RESET] $(ufw disable 2>/dev/null)"
+	elif [ $KILLS -gt 0 ];then
+		echo " $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
 	fi
 	echo " [$BOLD$GREEN*$RESET] VPN Disconnected."
 	exit 0
@@ -120,7 +123,7 @@ nameserver 209.222.18.218
 	cp /etc/resolv.conf.pia /etc/resolv.conf
 }
 
-fmace()						# Enable PIA MACE DNS based ad blocking
+fmace()						# Enable PIA MACE DNS based ad blocking.
 {
 	curl -s "http://209.222.18.222:1111/"
 	echo " [$BOLD$GREEN*$RESET] PIA MACE enabled."
@@ -132,16 +135,16 @@ fdnsrestore()						# Revert to original DNS servers.
 	cp /etc/resolv.conf.bak /etc/resolv.conf
 }
 
-flist()						# List available servers
+flist()						# List available servers.
 {
 	if [ ! -f $VPNPATH/servers ];then
 		fupdate
 	fi
 	
-	echo " [$BOLD$GREEN*$RESET] $BOLD$GREEN""Green$RESET servers allow port forwarding."
+	echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN Green$RESET servers allow port forwarding."
 	for i in $(seq $(cat $VPNPATH/servers | wc -l));do
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
-		SERVERNAME=$(cat $VPNPATH/servers | head -n $i | tail -n 1 | cut -d '.' -f 1)
+		SERVERNAME=$(cat $VPNPATH/servers | head -n $i | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
 			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
@@ -157,7 +160,7 @@ flist()						# List available servers
 	done
 }
 
-fchecklog()						# Check openvpn logs to get connection state
+fchecklog()						# Check openvpn logs to get connection state.
 {
 	LOGRETURN=0
 	while [ $LOGRETURN -eq 0 ]; do
@@ -172,9 +175,8 @@ fchecklog()						# Check openvpn logs to get connection state
 	done
 }
 
-fcheckinput()						# Check if user supplied server number is valid
+fcheckinput()						# Check if user supplied server number is valid.
 {
-	MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
 	if [[ $SERVERNUM =~ ^[0-9]+$ && $SERVERNUM -gt 0 && $SERVERNUM -le $MAXSERVERS ]];then
 		:
 	else
@@ -184,7 +186,27 @@ fcheckinput()						# Check if user supplied server number is valid
 	fi
 }
 
-						# Colour codes for terminal
+fping()						# Get latency to VPN server.
+{
+	PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
+	PINGINT=$(echo $PING | cut -d '.' -f 1)
+	SPEEDCOLOR=$BOLD$GREEN
+	SPEEDNAME="fast"
+	if [ $PINGINT -gt 40 ];then
+		SPEEDCOLOR=$BOLD$CYAN
+		SPEEDNAME="medium"
+	fi
+	if [ $PINGINT -gt 80 ];then
+		SPEEDCOLOR=$BOLD$BLUE
+		SPEEDNAME="slow"
+	fi
+	if [ $PINGINT -gt 160 ];then
+		SPEEDCOLOR=$BOLD$RED
+		SPEEDNAME="very slow"
+	fi
+}
+
+						# Colour codes for terminal.
 BOLD=$(tput bold)
 BLUE=$(tput setf 1)
 GREEN=$(tput setf 2)
@@ -192,24 +214,25 @@ CYAN=$(tput setf 3)
 RED=$(tput setf 4)
 RESET=$(tput sgr0)
 
-						# This is where we will store PIA openVPN files and user config
+						# This is where we will store PIA openVPN files and user config.
 VPNPATH='/etc/openvpn/pia'
 
-						# Initialize switches
+						# Initialize switches.
 PORTFORWARD=0
 NEWPORT=0
 NOPORT=0
 MACE=0
+KILLS=0
 DNS=0
 FORWARDEDPORT=0
 VERBOSE=0
 FIREWALL=0
 SERVERNUM=0
 
-						# Check if user is root
+						# Check if user is root.
 if [ $(id -u) != 0 ];then echo " [$BOLD$RED"'X'"$RESET] Script must be run as root." && exit 1;fi
 
-						# Check for missing dependencies and install
+						# Check for missing dependencies and install.
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing..";pacman --noconfirm -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing..";pacman --noconfirm -S ufw; }
@@ -221,7 +244,7 @@ fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
-						# Check for existence of credentials file
+						# Check for existence of credentials file.
 if [ ! -f $VPNPATH/pass.txt ];then
 	fupdate
 	read -p " [$BOLD$BLUE>$RESET] Please enter your username: " USERNAME
@@ -232,7 +255,15 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-while getopts "lhupnmdfvs:" opt
+MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+
+						# Check for the killswitch and allow ourselves out the firewall.
+if [ -f $VPNPATH/.killswitch ];then
+	ufw disable&>/dev/null
+	rm $VPNPATH/.killswitch
+fi
+
+while getopts "lhupnmkdfvs:" opt
 do
  	case $opt in
  		l) flist;exit 0;;
@@ -241,6 +272,7 @@ do
 		p) PORTFORWARD=1;;
 		n) fnewport;;
 		m) MACE=1;DNS=1;;
+		k) KILLS=1;FIREWALL=1;echo > $VPNPATH/.killswitch;;
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
@@ -257,28 +289,13 @@ if [ $SERVERNUM -lt 1 ];then
 fi
 
 fcheckinput
-SERVER=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1)
-SERVERNAME=$(echo $SERVER | cut -d '.' -f 1)
+SERVERNAME=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
+DOMAIN=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
+SERVER=$SERVERNAME.ovpn
 
 if [ $VERBOSE -gt 0 ];then
-	echo " [$BOLD$BLUE>$RESET] Testing latency to $SERVERNAME..."
-	DOMAIN=$(cat $VPNPATH/$SERVER | grep .com | awk '{print $2}')
-	PING=$(ping -c 3 $DOMAIN | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
-	PINGINT=$(echo $PING | cut -d '.' -f 1)
-	SPEEDCOLOR=$BOLD$GREEN
-	SPEEDNAME="fast"
-	if [ $PINGINT -gt 40 ];then
-		SPEEDCOLOR=$BOLD$CYAN
-		SPEEDNAME="medium"
-	fi
-	if [ $PINGINT -gt 80 ];then
-		SPEEDCOLOR=$BOLD$BLUE
-		SPEEDNAME="slow"
-	fi
-	if [ $PINGINT -gt 160 ];then
-		SPEEDCOLOR=$BOLD$RED
-		SPEEDNAME="very slow"
-	fi
+	echo " [$BOLD$BLUE>$RESET] Testing latency to $DOMAIN..."
+	fping $DOMAIN
 	echo " [$BOLD$GREEN*$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET"
 fi
 
@@ -363,6 +380,10 @@ fi
 
 if [ $FIREWALL -gt 0 ];then
 	ffirewall
+fi
+
+if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+	echo " [$BOLD$BLUE>$RESET] Killswitch will be activated on exit."
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
