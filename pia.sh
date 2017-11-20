@@ -44,11 +44,13 @@ fupdate()						# Update the PIA openvpn files.
 	echo " [$BOLD$BLUE>$RESET] Updating PIA openvpn files..."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
 	wget -q $DOWNURL -O $VPNPATH/pia.zip
-	cd $VPNPATH && unzip -q pia.zip && rm $VPNPATH/pia.zip
+	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
 	cd $VPNPATH && for file in *.ovpn;do mv "$file" `echo $file | tr ' ' '_'` &>/dev/null;done
-	for file in $VPNPATH/*.ovpn;do sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file;done
-	for file in $VPNPATH/*.ovpn;do echo -e "auth-nocache\nlog /var/log/pia.log" >> $file;done
-	for file in $VPNPATH/*.ovpn;do echo -n $(basename $file | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $file | grep .com | awk '{print $2}' >> $VPNPATH/servers;done
+	for file in $VPNPATH/*.ovpn;do
+		sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file
+		echo -e "auth-nocache\nlog /var/log/pia.log" >> $file
+		echo -n $(basename $file | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $file | grep .com | awk '{print $2}' >> $VPNPATH/servers
+	done
 	echo " [$BOLD$GREEN*$RESET] Files Updated."
 }
 
@@ -73,7 +75,7 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
 	ufw default deny incoming &>/dev/null
 	ufw allow out on tun0 &>/dev/null
 	ufw allow in on tun0 &>/dev/null
-	echo " [$BOLD$GREEN*$RESET] $(ufw enable 2>/dev/null)"
+	echo " [$BOLD$GREEN*$RESET] $(ufw enable 2>/dev/null)."
 }
 
 fhelp()						# Help function.
@@ -294,29 +296,30 @@ DOMAIN=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $2}
 SERVER=$SERVERNAME.ovpn
 
 if [ $VERBOSE -gt 0 ];then
-	echo " [$BOLD$BLUE>$RESET] Testing latency to $DOMAIN..."
+	echo -n " [$BOLD$BLUE>$RESET] Testing latency to $DOMAIN..."
 	fping $DOMAIN
-	echo " [$BOLD$GREEN*$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET"
+	echo -e "\r [$BOLD$GREEN*$RESET] $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                    "
 fi
 
 trap fvpnreset INT
-echo " [$BOLD$BLUE>$RESET] Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
+echo -n " [$BOLD$BLUE>$RESET] Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
 cd $VPNPATH && openvpn --config $SERVER --daemon
 
 fchecklog
 if [ $LOGRETURN -eq 2 ];then
-	echo " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details."
+	echo " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details.                    "
 	rm -rf $VPNPATH/pass.txt
 	exit 1
 fi
 
 VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
-echo " [$BOLD$GREEN*$RESET] Connected, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET"
+echo -e "\r [$BOLD$GREEN*$RESET]$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    "
 
 if [ $VERBOSE -gt 0 ];then
 	echo " [$BOLD$GREEN*$RESET] OpenVPN Logs:"
 	echo -n $CYAN
-	cat /var/log/pia.log
+	PLOG=$(cat /var/log/pia.log)
+	while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}'; done <<< "$PLOG"
 	echo "$RESET [$BOLD$BLUE>$RESET] OpenVPN Settings:"
 	SETTINGS=$(cat $VPNPATH/$SERVER)
 	if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
@@ -347,7 +350,7 @@ if [ $VERBOSE -gt 0 ];then
 	NEWIP=''
 	CURRIP=$(cat /tmp/ip.txt)
 	rm /tmp/ip.txt
-	echo " [$BOLD$BLUE>$RESET] Checking new IP..."
+	echo  -n " [$BOLD$BLUE>$RESET] Fetching IP..."
 	sleep 1
 	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
 		NEWIP=$(curl -s -m 4 icanhazip.com)
@@ -357,17 +360,15 @@ if [ $VERBOSE -gt 0 ];then
 	WHOISNEW="$(whois $NEWIP)"
 	COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
 	COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
-	DESCROLD="$(echo "$WHOISOLD" | grep descr)"
-	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"
+	DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
+	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
 	
-	echo -e " [$BOLD$BLUE>$RESET] Old IP:\n$RED$BOLD$CURRIP\n$COUNTRYOLD\n$DESCROLD$RESET"
-	echo -e " [$BOLD$BLUE>$RESET] Current IP:\n$GREEN$BOLD$NEWIP$RESET"
-	if [ $(echo $COUNTRYNEW | wc -c) -gt 3 ];then
-		echo "$BOLD$GREEN$COUNTRYNEW$RESET"
-	fi
-	if [ $(echo "$DESCRNEW" | wc -c) -gt 3 ];then
-		echo "$BOLD$GREEN$DESCRNEW$RESET"
-	fi
+	echo -e "\r [$BOLD$BLUE>$RESET] Old IP:$RED$BOLD $CURRIP"
+	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$COUNTRYOLD"
+	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$DESCROLD"
+	echo -e " [$BOLD$BLUE>$RESET] Current IP:$GREEN$BOLD $NEWIP"
+	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$COUNTRYNEW"
+	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$DESCRNEW"
 fi
 
 if [ $DNS -gt 0 ];then
@@ -383,7 +384,7 @@ if [ $FIREWALL -gt 0 ];then
 fi
 
 if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
-	echo " [$BOLD$BLUE>$RESET] Killswitch will be activated on exit."
+	echo " [$BOLD$BLUE>$RESET] Killswitch is active and enabled on system startup."
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
