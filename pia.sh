@@ -116,6 +116,10 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo " [$BOLD$GREEN*$RESET] $(ufw disable 2>/dev/null)"
 	elif [ $KILLS -gt 0 ];then
+		ufw deny in from $LAN &>/dev/null
+		ufw deny out to $LAN &>/dev/null
+		ufw deny in on $DEVICE from 0.0.0.0/0 &>/dev/null
+		ufw deny out on $DEVICE to 0.0.0.0/0 &>/dev/null
 		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
 	fi
 	echo " [$BOLD$GREEN*$RESET] VPN Disconnected."
