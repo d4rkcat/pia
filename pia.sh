@@ -56,9 +56,14 @@ fupdate()						# Update the PIA openvpn files.
 
 fforward()						# Forward a port.
 {
+	echo -n " [$BOLD$BLUE>$RESET] Forwarding a port..."
 	sleep 1
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	FORWARDEDPORT=$(curl -s -m 6 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
+	CNT=0
+	while [[ $(echo $FORWARDEDPORT | wc -c) -lt 3 && $CNT -lt 3 ]];do
+		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
+		((++CNT))
+	done
 }
 
 fnewport()						# Change port forwarded.
@@ -69,12 +74,15 @@ fnewport()						# Change port forwarded.
 	head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id
 }
 
-ffirewall()						# Set up ufw firewall rules to only allow traffic on tun0.
+ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled interface and within LAN.
 {
+	echo y | ufw reset &>/dev/null
 	ufw default deny outgoing &>/dev/null
 	ufw default deny incoming &>/dev/null
-	ufw allow out on tun0 &>/dev/null
-	ufw allow in on tun0 &>/dev/null
+	ufw allow in from $LAN &>/dev/null
+	ufw allow out to $LAN &>/dev/null
+	ufw allow in on $DEVICE from 0.0.0.0/0 &>/dev/null
+	ufw allow out on $DEVICE to 0.0.0.0/0 &>/dev/null
 	echo " [$BOLD$GREEN*$RESET] $(ufw enable 2>/dev/null)."
 }
 
@@ -108,7 +116,7 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo " [$BOLD$GREEN*$RESET] $(ufw disable 2>/dev/null)"
 	elif [ $KILLS -gt 0 ];then
-		echo " $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
+		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
 	fi
 	echo " [$BOLD$GREEN*$RESET] VPN Disconnected."
 	exit 0
@@ -169,9 +177,12 @@ fchecklog()						# Check openvpn logs to get connection state.
 		VCONNECT=$(cat /var/log/pia.log)
 		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1 ];then
 			LOGRETURN=1
-		fi
-		if [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1 ];then
+		elif [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1 ];then
 			LOGRETURN=2
+		elif [ $(echo "$VCONNECT" | grep 'RESOLVE: Cannot resolve host address' | wc -c) -gt 1 ];then
+			LOGRETURN=3
+		elif [ $(echo "$VCONNECT" | grep 'process exiting' | wc -c) -gt 1 ];then
+			LOGRETURN=4
 		fi
 		sleep 0.2
 	done
@@ -236,12 +247,12 @@ if [ $(id -u) != 0 ];then echo " [$BOLD$RED"'X'"$RESET] Script must be run as ro
 
 						# Check for missing dependencies and install.
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing..";pacman --noconfirm -S openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing..";pacman --noconfirm -S ufw; }
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing...";pacman --noconfirm -S openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing...";pacman --noconfirm -S ufw; }
 else
 	command -v apt-get >/dev/null 2>&1 || { echo >&2 " [$BOLD$RED"'X'"$RESET] OS not detected as Arch or Debian, Please install openvpn and ufw packages for your system and retry.";exit 1; }
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing..";apt-get install -y openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing..";apt-get install -y ufw; }
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] openvpn required, installing...";apt-get install -y openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 " [$BOLD$GREEN*$RESET] ufw required, installing...";apt-get install -y ufw; }
 fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
@@ -258,6 +269,7 @@ if [ ! -f $VPNPATH/pass.txt ];then
 fi
 
 MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+LAN=$(hostname --ip-address | awk '{print $1}' | cut -d '.' -f 1-3)".0/24"
 
 						# Check for the killswitch and allow ourselves out the firewall.
 if [ -f $VPNPATH/.killswitch ];then
@@ -293,7 +305,7 @@ fi
 fcheckinput
 SERVERNAME=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
 DOMAIN=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
-SERVER=$SERVERNAME.ovpn
+CONFIG=$SERVERNAME.ovpn
 
 if [ $VERBOSE -gt 0 ];then
 	echo -n " [$BOLD$BLUE>$RESET] Testing latency to $DOMAIN..."
@@ -303,25 +315,25 @@ fi
 
 trap fvpnreset INT
 echo -n " [$BOLD$BLUE>$RESET] Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
-cd $VPNPATH && openvpn --config $SERVER --daemon
+cd $VPNPATH && openvpn --config $CONFIG --daemon
+VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
 
 fchecklog
-if [ $LOGRETURN -eq 2 ];then
-	echo " [$BOLD$RED"'X'"$RESET] Authorization Failed. Please check login details.                    "
-	rm -rf $VPNPATH/pass.txt
-	exit 1
-fi
 
-VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
-echo -e "\r [$BOLD$GREEN*$RESET]$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    "
+case $LOGRETURN in
+	1) echo -e "\r [$BOLD$GREEN*$RESET]$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    ";;
+	2) echo -e "\r [$BOLD$RED"'X'"$RESET] Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;exit 1;;
+	3) echo -e "\r [$BOLD$RED"'X'"$RESET] OpenVPN failed to resolve $DOMAIN.                    ";kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
+	4) echo -e "\r [$BOLD$RED"'X'"$RESET] OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
+esac
 
+PLOG=$(cat /var/log/pia.log)
 if [ $VERBOSE -gt 0 ];then
 	echo " [$BOLD$GREEN*$RESET] OpenVPN Logs:"
 	echo -n $CYAN
-	PLOG=$(cat /var/log/pia.log)
-	while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}'; done <<< "$PLOG"
+	while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
 	echo "$RESET [$BOLD$BLUE>$RESET] OpenVPN Settings:"
-	SETTINGS=$(cat $VPNPATH/$SERVER)
+	SETTINGS=$(cat $VPNPATH/$CONFIG)
 	if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
 		echo " [$BOLD$GREEN*$RESET]$BOLD$GREEN UDP$RESET Protocol."
 	fi
@@ -364,12 +376,14 @@ if [ $VERBOSE -gt 0 ];then
 	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
 	
 	echo -e "\r [$BOLD$BLUE>$RESET] Old IP:$RED$BOLD $CURRIP"
-	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$COUNTRYOLD"
-	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$DESCROLD"
+	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
+	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
 	echo -e " [$BOLD$BLUE>$RESET] Current IP:$GREEN$BOLD $NEWIP"
-	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$COUNTRYNEW"
-	while IFS= read -r LNE ; do echo "     $LNE"; done <<< "$DESCRNEW"
+	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
+	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
 fi
+
+DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
 
 if [ $DNS -gt 0 ];then
 	fdnschange
@@ -402,18 +416,17 @@ if [ $PORTFORWARD -gt 0 ];then
 	esac
 	if [ $NOPORT -eq 0 ];then
 		if [ $NEWPORT -gt 0 ]; then
-			echo " [$BOLD$BLUE>$RESET] Changing identity.."
-			echo " [$BOLD$GREEN*$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+			echo -e "\r [$BOLD$GREEN*$RESET] Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
 		else
 			if [ $VERBOSE -gt 0 ];then
-				echo " [$BOLD$BLUE>$RESET] Forwarding port using identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
+				echo -e "\r [$BOLD$BLUE>$RESET] Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
 			fi
 		fi
 
 		if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
-			echo " [$BOLD$GREEN*$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you."
+			echo -e "\r [$BOLD$GREEN*$RESET] Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you.                    "
 		else
-			echo " [$BOLD$RED"'X'"$RESET] $SERVERNAME failed to forward us a port!"
+			echo -e "\r [$BOLD$RED"'X'"$RESET] $SERVERNAME failed to forward us a port!                   "
 		fi
 	else
 		echo " [$BOLD$RED"'X'"$RESET] Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
