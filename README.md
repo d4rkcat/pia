@@ -46,7 +46,8 @@ Usage
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
-	-f	- Enable firewall to block all traffic apart from tun0.
+	-f	- Enable firewall to block all non tunnel traffic.
+	-e	- Allow LAN through firewall.
 	-m	- Enable PIA MACE ad blocking.
 	-k	- Enable internet killswitch.
 	-v	- Display verbose information.
