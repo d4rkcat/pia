@@ -30,6 +30,9 @@ Dependencies:
 - bash
 - openvpn
 - ufw
+- curl
+- wget
+- unzip
 
 Installation:
 ==========

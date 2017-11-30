@@ -263,11 +263,15 @@ if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";pacman --noconfirm -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";pacman --noconfirm -S ufw; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";pacman --noconfirm -S curl; }
+	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";pacman --noconfirm -S wget; }
+	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";pacman --noconfirm -S unzip; }
 else
 	command -v apt-get >/dev/null 2>&1 || { echo >&2 "$ERROR OS not detected as Arch or Debian, Please install openvpn and ufw packages for your system and retry.";exit 1; }
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";apt-get install -y openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";apt-get install -y ufw; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";apt-get install -y curl; }
+	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";apt-get install -y wget; }
+	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";apt-get install -y unzip; }
 fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
