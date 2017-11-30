@@ -57,7 +57,7 @@ fupdate()						# Update the PIA openvpn files.
 fforward()						# Forward a port.
 {
 	echo -n "$PROMPT Forwarding a port..."
-	sleep 1
+	sleep 1.5
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
 	CNT=0
 	while [[ $(echo $FORWARDEDPORT | wc -c) -lt 3 && $CNT -lt 3 ]];do
@@ -262,10 +262,12 @@ if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";pacman --noconfirm -S openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";pacman --noconfirm -S ufw; }
+	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";pacman --noconfirm -S curl; }
 else
 	command -v apt-get >/dev/null 2>&1 || { echo >&2 "$ERROR OS not detected as Arch or Debian, Please install openvpn and ufw packages for your system and retry.";exit 1; }
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";apt-get install -y openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";apt-get install -y ufw; }
+	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";apt-get install -y curl; }
 fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
@@ -378,24 +380,29 @@ if [ $VERBOSE -gt 0 ];then
 	CURRIP=$(cat /tmp/ip.txt)
 	rm /tmp/ip.txt
 	echo  -n "$PROMPT Fetching IP..."
-	sleep 1
-	while [ $(echo $NEWIP | wc -c) -lt 2 ];do
+	sleep 1.5
+	CNT=0
+	while [[ $(echo $NEWIP | wc -c) -lt 2 && $CNT -lt 2 ]];do
 		NEWIP=$(curl -s -m 4 icanhazip.com)
+		((++CNT))
 	done
 
-	WHOISOLD="$(whois $CURRIP)"
-	WHOISNEW="$(whois $NEWIP)"
-	COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
-	COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
-	DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
-	DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
-	
-	echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
-	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
-	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
-	echo -e "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
-	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
-	while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+	if [ $(echo $NEWIP | wc -c) -gt 2 ];then
+		WHOISOLD="$(whois $CURRIP)"
+		WHOISNEW="$(whois $NEWIP)"
+		COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
+		COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
+		DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
+		DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
+		
+		echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
+		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
+		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
+		echo -e "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
+		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
+		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+	else
+		echo -e "\r$ERROR Failed to fetch new IP.                   "
 fi
 
 DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
