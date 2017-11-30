@@ -254,25 +254,41 @@ VERBOSE=0
 FIREWALL=0
 SERVERNUM=0
 FLAN=0
+UNKNOWNOS=0
+MISSINGDEP=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
 
 						# Check for missing dependencies and install.
 if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";pacman --noconfirm -S openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";pacman --noconfirm -S ufw; }
-	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";pacman --noconfirm -S curl; }
-	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";pacman --noconfirm -S wget; }
-	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";pacman --noconfirm -S unzip; }
+	INSTALLCMD="pacman --noconfirm -S"
 else
-	command -v apt-get >/dev/null 2>&1 || { echo >&2 "$ERROR OS not detected as Arch or Debian, Please install openvpn and ufw packages for your system and retry.";exit 1; }
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";apt-get install -y openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";apt-get install -y ufw; }
-	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";apt-get install -y curl; }
-	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";apt-get install -y wget; }
-	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";apt-get install -y unzip; }
+	if [ $(command -v apt-get) ];then
+		INSTALLCMD="apt-get install -y"
+	else
+		UNKNOWNOS=1
+	fi
 fi
+
+if [ $UNKNOWNOS -gt 0 ];then
+	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
+	command -v ufw >/dev/null 2>&1 || MISSINGDEP=1
+	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
+	command -v wget >/dev/null 2>&1 || MISSINGDEP=1
+	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
+	if [ $MISSINGDEP -eq 1 ];then
+		echo "$ERROR OS not identified as arch or debian based, please install openvpn, ufw, curl, wget and unzip and run script again."
+		exit 1
+	fi
+else
+	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";$INSTALLCMD openvpn; }
+	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";$INSTALLCMD ufw; }
+	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
+	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";$INSTALLCMD wget; }
+	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
+fi
+
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
