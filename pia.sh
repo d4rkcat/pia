@@ -60,7 +60,7 @@ fforward()						# Forward a port.
 	sleep 1.5
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
 	CNT=0
-	while [[ $(echo $FORWARDEDPORT | wc -c) -lt 3 && $CNT -lt 3 ]];do
+	while [[ $(echo $FORWARDEDPORT | wc -c) -lt 3 && $CNT -lt 2 ]];do
 		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 		((++CNT))
 	done
@@ -191,6 +191,8 @@ fchecklog()						# Check openvpn logs to get connection state.
 			LOGRETURN=3
 		elif [ $(echo "$VCONNECT" | grep 'process exiting' | wc -c) -gt 1 ];then
 			LOGRETURN=4
+		elif [ $(echo "$VCONNECT" | grep 'Exiting due to fatal error' | wc -c) -gt 1 ];then
+			LOGRETURN=5
 		fi
 		sleep 0.2
 	done
@@ -304,14 +306,8 @@ if [ ! -f $VPNPATH/pass.txt ];then
 fi
 
 MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
-LAN=$(hostname --ip-address | awk '{print $1}' | cut -d '.' -f 1-3)".0/24"
-ROUTER=$(ip route show | grep -i 'default via'| awk '{print $3 }')
-
-						# Check for the killswitch and allow ourselves out the firewall.
-if [ -f $VPNPATH/.killswitch ];then
-	ufw disable&>/dev/null
-	rm $VPNPATH/.killswitch
-fi
+LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
+ufw disable&>/dev/null
 
 while getopts "lhupnmkdfves:" opt
 do
@@ -322,7 +318,7 @@ do
 		p) PORTFORWARD=1;;
 		n) fnewport;;
 		m) MACE=1;DNS=1;;
-		k) KILLS=1;FIREWALL=1;echo > $VPNPATH/.killswitch;;
+		k) KILLS=1;FIREWALL=1;;
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		e) FLAN=1;FIREWALL=1;;
@@ -362,6 +358,7 @@ case $LOGRETURN in
 	2) echo -e "\r$ERROR Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;exit 1;;
 	3) echo -e "\r$ERROR OpenVPN failed to resolve $DOMAIN.                    ";kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
 	4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
+	5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
 esac
 
 PLOG=$(cat /var/log/pia.log)
@@ -423,6 +420,7 @@ if [ $VERBOSE -gt 0 ];then
 		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
 	else
 		echo -e "\r$ERROR Failed to fetch new IP.                   "
+	fi
 fi
 
 DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
@@ -433,14 +431,6 @@ fi
 
 if [ $MACE -gt 0 ];then
 	fmace
-fi
-
-if [ $FIREWALL -gt 0 ];then
-	ffirewall
-fi
-
-if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
-	echo "$PROMPT Killswitch is active and enabled on system startup."
 fi
 
 if [ $PORTFORWARD -gt 0 ];then
@@ -473,6 +463,14 @@ if [ $PORTFORWARD -gt 0 ];then
 	else
 		echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
+fi
+
+if [ $FIREWALL -gt 0 ];then
+	ffirewall
+fi
+
+if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+	echo "$PROMPT Killswitch activated."
 fi
 
 echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
