@@ -129,9 +129,9 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
-	for i in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
-		kill -s SIGINT $i &>/dev/null
-    done
+	for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
+		kill -s SIGINT $PID &>/dev/null
+	done
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo "$INFO $(ufw disable 2>/dev/null)"
 	elif [ $KILLS -gt 0 ];then
@@ -469,6 +469,7 @@ if [ $PORTFORWARD -gt 0 ];then
 		"Sweden") fforward;;
 		"France") fforward;;
 		"Germany") fforward;;
+		"CA_Vancouver") fforward;;
 		*) NOPORT=1;;
 	esac
 	if [ $NOPORT -eq 0 ];then
@@ -486,7 +487,7 @@ if [ $PORTFORWARD -gt 0 ];then
 			echo -e "\r$ERROR $SERVERNAME failed to forward us a port!                   "
 		fi
 	else
-		echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
+		echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
 	fi
 fi
 
