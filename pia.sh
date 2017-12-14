@@ -47,7 +47,21 @@ fupdate()						# Update the PIA openvpn files.
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
 	cd $VPNPATH && for file in *.ovpn;do mv "$file" $(echo $file | tr ' ' '_') &>/dev/null;done
 	for file in $VPNPATH/*.ovpn;do
-		sed -i 's/auth-user-pass/auth-user-pass pass.txt/' $file
+		OLD="auth-user-pass"
+		NEW="auth-user-pass $VPNPATH/pass.txt"
+		sed -i "s%$OLD%$NEW%g" $file
+		OLD="crl-verify crl.rsa.2048.pem"
+		NEW="crl-verify $VPNPATH/crl.rsa.2048.pem"
+		sed -i "s%$OLD%$NEW%g" $file
+		OLD="crl-verify crl.rsa.4096.pem"
+		NEW="crl-verify $VPNPATH/crl.rsa.4096.pem"
+		sed -i "s%$OLD%$NEW%g" $file
+		OLD="ca ca.rsa.2048.crt"
+		NEW="ca $VPNPATH/ca.rsa.2048.crt"
+		sed -i "s%$OLD%$NEW%g" $file
+		OLD="ca ca.rsa.4096.crt"
+		NEW="ca $VPNPATH/ca.rsa.4096.crt"
+		sed -i "s%$OLD%$NEW%g" $file
 		echo -e "auth-nocache\nlog /var/log/pia.log" >> $file
 		echo -n $(basename $file | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $file | grep .com | awk '{print $2}' >> $VPNPATH/servers
 	done
@@ -76,7 +90,6 @@ fnewport()						# Change port forwarded.
 
 ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled interface and within LAN.
 {
-	echo y | ufw reset &>/dev/null
 	ufw default deny outgoing &>/dev/null
 	ufw default deny incoming &>/dev/null
 	ufw allow in on $DEVICE from 0.0.0.0/0 &>/dev/null
@@ -116,14 +129,17 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
-	kill -s SIGINT $VPNPID &>/dev/null
+	for i in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
+		kill -s SIGINT $i &>/dev/null
+    done
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo "$INFO $(ufw disable 2>/dev/null)"
 	elif [ $KILLS -gt 0 ];then
-		ufw deny in from $LAN &>/dev/null
-		ufw deny out to $LAN &>/dev/null
-		ufw deny in on $DEVICE from 0.0.0.0/0 &>/dev/null
-		ufw deny out on $DEVICE to 0.0.0.0/0 &>/dev/null
+		CNT=0
+		while [ $CNT -lt 5 ];do
+			echo y | ufw delete 1&>/dev/null
+			((++CNT))
+		done
 		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
 	fi
 	echo "$INFO VPN Disconnected."
@@ -263,14 +279,14 @@ MISSINGDEP=0
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
 
 						# Check for missing dependencies and install.
-if [ $(uname -r | grep ARCH | wc -c) -gt 1 ];then
+if [ $(command -v pacman) ];then
 	INSTALLCMD="pacman --noconfirm -S"
+elif [ $(command -v apt-get) ];then
+	INSTALLCMD="apt-get install -y"
+elif [ $(command -v yum) ];then
+	INSTALLCMD="yum install -y"
 else
-	if [ $(command -v apt-get) ];then
-		INSTALLCMD="apt-get install -y"
-	else
-		UNKNOWNOS=1
-	fi
+	UNKNOWNOS=1
 fi
 
 if [ $UNKNOWNOS -gt 0 ];then
@@ -294,9 +310,10 @@ fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
+if [ ! -f $VPNPATH/servers ];then fupdate;fi
+
 						# Check for existence of credentials file.
 if [ ! -f $VPNPATH/pass.txt ];then
-	fupdate
 	read -p "$PROMPT Please enter your username: " USERNAME
 	read -sp "$PROMPT Please enter your password: " PASSWORD
 	echo -e "$USERNAME\n$PASSWORD" > $VPNPATH/pass.txt
@@ -433,6 +450,14 @@ if [ $MACE -gt 0 ];then
 	fmace
 fi
 
+if [ $FIREWALL -gt 0 ];then
+	ffirewall
+fi
+
+if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+	echo "$PROMPT Killswitch activated."
+fi
+
 if [ $PORTFORWARD -gt 0 ];then
 	case $SERVERNAME in
 		"Netherlands") fforward;;
@@ -463,14 +488,6 @@ if [ $PORTFORWARD -gt 0 ];then
 	else
 		echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, Romania, Israel, Sweden, France and Germany."
 	fi
-fi
-
-if [ $FIREWALL -gt 0 ];then
-	ffirewall
-fi
-
-if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
-	echo "$PROMPT Killswitch activated."
 fi
 
 echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
