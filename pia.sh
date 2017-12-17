@@ -43,27 +43,27 @@ fupdate()						# Update the PIA openvpn files.
 	
 	echo -n "$PROMPT Updating PIA openvpn files..."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
-	wget -q $DOWNURL -O $VPNPATH/pia.zip
+	curl -s -o $VPNPATH/pia.zip $DOWNURL
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
-	cd $VPNPATH && for file in *.ovpn;do mv "$file" $(echo $file | tr ' ' '_') &>/dev/null;done
-	for file in $VPNPATH/*.ovpn;do
+	cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
+	for CONFIGFILE in $VPNPATH/*.ovpn;do
 		OLD="auth-user-pass"
 		NEW="auth-user-pass $VPNPATH/pass.txt"
-		sed -i "s%$OLD%$NEW%g" $file
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		OLD="crl-verify crl.rsa.2048.pem"
 		NEW="crl-verify $VPNPATH/crl.rsa.2048.pem"
-		sed -i "s%$OLD%$NEW%g" $file
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		OLD="crl-verify crl.rsa.4096.pem"
 		NEW="crl-verify $VPNPATH/crl.rsa.4096.pem"
-		sed -i "s%$OLD%$NEW%g" $file
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		OLD="ca ca.rsa.2048.crt"
 		NEW="ca $VPNPATH/ca.rsa.2048.crt"
-		sed -i "s%$OLD%$NEW%g" $file
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		OLD="ca ca.rsa.4096.crt"
 		NEW="ca $VPNPATH/ca.rsa.4096.crt"
-		sed -i "s%$OLD%$NEW%g" $file
-		echo -e "auth-nocache\nlog /var/log/pia.log" >> $file
-		echo -n $(basename $file | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $file | grep .com | awk '{print $2}' >> $VPNPATH/servers
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
+		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
+		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers
 	done
 	echo -e "\r$INFO Files Updated.                     "
 }
@@ -90,6 +90,7 @@ fnewport()						# Change port forwarded.
 
 ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled interface and within LAN.
 {
+	DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
 	ufw default deny outgoing &>/dev/null
 	ufw default deny incoming &>/dev/null
 	ufw allow in on $DEVICE from 0.0.0.0/0 &>/dev/null
@@ -184,6 +185,7 @@ flist()						# List available servers.
 			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Toronto") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Montreal") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Vancouver") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Romania") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Israel") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Sweden") echo $BOLD$GREEN$SERVERNAME$RESET;;
@@ -293,17 +295,15 @@ if [ $UNKNOWNOS -gt 0 ];then
 	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
 	command -v ufw >/dev/null 2>&1 || MISSINGDEP=1
 	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
-	command -v wget >/dev/null 2>&1 || MISSINGDEP=1
 	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
 	if [ $MISSINGDEP -eq 1 ];then
-		echo "$ERROR OS not identified as arch or debian based, please install openvpn, ufw, curl, wget and unzip and run script again."
+		echo "$ERROR OS not identified as arch or debian based, please install openvpn, ufw, curl and unzip and run script again."
 		exit 1
 	fi
 else
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";$INSTALLCMD openvpn; }
 	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";$INSTALLCMD ufw; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
-	command -v wget >/dev/null 2>&1 || { echo >&2 "$INFO wget required, installing...";$INSTALLCMD wget; }
 	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
 fi
 
@@ -391,10 +391,10 @@ if [ $VERBOSE -gt 0 ];then
 	if [ $(echo "$SETTINGS" | grep 'proto tcp' | wc -c) -gt 3 ];then
 		echo "$INFO$BOLD$CYAN TCP$RESET Protocol."
 	fi
-	if [ $(echo "$SETTINGS" | grep 'ca ca.rsa.2048.crt' | wc -c) -gt 3 ];then
+	if [ $(echo "$SETTINGS" | grep 'ca.rsa.2048.crt' | wc -c) -gt 3 ];then
 		echo "$INFO$BOLD$CYAN 2048 Bit RSA$RESET Certificate."
 	fi
-	if [ $(echo "$SETTINGS" | grep 'ca ca.rsa.4096.crt' | wc -c) -gt 3 ];then
+	if [ $(echo "$SETTINGS" | grep 'ca.rsa.4096.crt' | wc -c) -gt 3 ];then
 		echo "$INFO$BOLD$GREEN 4096 Bit RSA$RESET Certificate."
 	fi
 	if [ $(echo "$SETTINGS" | grep 'cipher aes-128-cbc' | wc -c) -gt 3 ];then
@@ -439,8 +439,6 @@ if [ $VERBOSE -gt 0 ];then
 		echo -e "\r$ERROR Failed to fetch new IP.                   "
 	fi
 fi
-
-DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
 
 if [ $DNS -gt 0 ];then
 	fdnschange

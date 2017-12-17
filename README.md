@@ -21,9 +21,6 @@ The credentials file is protected by 'chmod 400', which means only the root user
 
 The ovpn files are editited and 'auth-nocache' option is added, which means openvpn will not store your creds in memory.  
 
-Warning:
-==========
-To users of all previous versions, you must run this version with -u option once to make sure you are compatible.
 
 Dependencies:
 ==========
@@ -31,7 +28,6 @@ Dependencies:
 - openvpn
 - ufw
 - curl
-- wget
 - unzip
 
 Installation:
