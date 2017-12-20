@@ -20,13 +20,15 @@ fupdate()						# Update the PIA openvpn files.
 	CONFIGTCP="https://www.privateinternetaccess.com/openvpn/openvpn-tcp.zip"
 	CONFIGTCPSTRONG="https://www.privateinternetaccess.com/openvpn/openvpn-strong-tcp.zip"
 
-	echo "$PROMPT Please choose configuration:"
-	echo " $BOLD$RED[$RESET""1""$BOLD$RED]$RESET Default UDP (aes-128-cbc sha1 rsa-2048)"
-	echo " $BOLD$RED[$RESET""2""$BOLD$RED]$RESET Strong UDP (aes-256-cbc sha256 rsa-4096)"
-	echo " $BOLD$RED[$RESET""3""$BOLD$RED]$RESET Direct IP (aes-128-cbc sha1 rsa-2048)"
-	echo " $BOLD$RED[$RESET""4""$BOLD$RED]$RESET Default TCP (aes-128-cbc sha1 rsa-2048)"
-	echo " $BOLD$RED[$RESET""5""$BOLD$RED]$RESET Strong TCP (aes-256-cbc sha256 rsa-4096)"
-	read -p "$PROMPT " CONFIGNUM
+	if [ $CONFIGNUM -eq 0 ];then
+		echo "$PROMPT Please choose configuration:"
+		echo " $BOLD$RED[$RESET""1""$BOLD$RED]$RESET Default UDP (aes-128-cbc sha1 rsa-2048)"
+		echo " $BOLD$RED[$RESET""2""$BOLD$RED]$RESET Strong UDP (aes-256-cbc sha256 rsa-4096)"
+		echo " $BOLD$RED[$RESET""3""$BOLD$RED]$RESET Direct IP (aes-128-cbc sha1 rsa-2048)"
+		echo " $BOLD$RED[$RESET""4""$BOLD$RED]$RESET Default TCP (aes-128-cbc sha1 rsa-2048)"
+		echo " $BOLD$RED[$RESET""5""$BOLD$RED]$RESET Strong TCP (aes-256-cbc sha256 rsa-4096)"
+		read -p "$PROMPT " CONFIGNUM
+	fi
 
 	if [[ $CONFIGNUM =~ ^[0-9]+$ && $CONFIGNUM -lt 6 && $CONFIGNUM -gt 0 ]];then
 		case $CONFIGNUM in
@@ -40,10 +42,11 @@ fupdate()						# Update the PIA openvpn files.
 		echo "$ERROR $CONFIGNUM is not a valid option! 1-5 only."
 		exit 1
 	fi
-	
+
 	echo -n "$PROMPT Updating PIA openvpn files..."
-	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers $VPNPATH/*.crt $VPNPATH/*.pem
-	curl -s -o $VPNPATH/pia.zip $DOWNURL
+	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers.txt $VPNPATH/*.crt $VPNPATH/*.pem
+	curl -so $VPNPATH/pia.zip $DOWNURL
+	echo "$CONFIGNUM $DOWNURL $(curl -sI $DOWNURL | grep Last-Modified | cut -d ' ' -f 2-)" > $VPNPATH/configversion.txt
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
 	cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
 	for CONFIGFILE in $VPNPATH/*.ovpn;do
@@ -63,7 +66,8 @@ fupdate()						# Update the PIA openvpn files.
 		NEW="ca $VPNPATH/ca.rsa.4096.crt"
 		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
-		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers;cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers
+		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
+		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
 	done
 	echo -e "\r$INFO Files Updated.                     "
 }
@@ -172,14 +176,14 @@ fdnsrestore()						# Revert to original DNS servers.
 
 flist()						# List available servers.
 {
-	if [ ! -f $VPNPATH/servers ];then
+	if [ ! -f $VPNPATH/servers.txt ];then
 		fupdate
 	fi
 	
 	echo "$INFO$BOLD$GREEN Green$RESET servers allow port forwarding."
-	for i in $(seq $(cat $VPNPATH/servers | wc -l));do
+	for i in $(seq $(cat $VPNPATH/servers.txt | wc -l));do
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
-		SERVERNAME=$(cat $VPNPATH/servers | head -n $i | tail -n 1 | awk '{print $1}')
+		SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $i | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
 			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
@@ -276,6 +280,7 @@ SERVERNUM=0
 FLAN=0
 UNKNOWNOS=0
 MISSINGDEP=0
+CONFIGNUM=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
@@ -310,8 +315,6 @@ fi
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
-if [ ! -f $VPNPATH/servers ];then fupdate;fi
-
 						# Check for existence of credentials file.
 if [ ! -f $VPNPATH/pass.txt ];then
 	read -p "$PROMPT Please enter your username: " USERNAME
@@ -322,14 +325,14 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-MAXSERVERS=$(cat $VPNPATH/servers | wc -l)
+MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
 LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
 ufw disable&>/dev/null
 
 while getopts "lhupnmkdfves:" opt
 do
- 	case $opt in
- 		l) flist;exit 0;;
+	case $opt in
+		l) flist;exit 0;;
 		h) fhelp;exit 0;;
 		u) fupdate;;
 		p) PORTFORWARD=1;;
@@ -345,6 +348,8 @@ do
 	esac
 done
 
+if [ ! -f $VPNPATH/servers.txt ];then fupdate;fi
+
 if [ $SERVERNUM -lt 1 ];then
 	echo "$PROMPT Please choose a server: "
 	flist
@@ -353,8 +358,8 @@ if [ $SERVERNUM -lt 1 ];then
 fi
 
 fcheckinput
-SERVERNAME=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
-DOMAIN=$(cat $VPNPATH/servers | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
+SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
+DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
 CONFIG=$SERVERNAME.ovpn
 
 if [ $VERBOSE -gt 0 ];then
@@ -377,6 +382,18 @@ case $LOGRETURN in
 	4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
 	5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
 esac
+
+						# Check if a new config zip is available and download.
+CONFIGNUM=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 1)
+CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
+CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
+CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
+if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
+	echo "$ERROR WARNING: OpenVPN configuration is out of date!"
+	echo "$PROMPT New PIA OpenVPN config file available! Updating..."
+	fupdate
+	fvpnreset
+fi
 
 PLOG=$(cat /var/log/pia.log)
 if [ $VERBOSE -gt 0 ];then

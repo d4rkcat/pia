@@ -1,6 +1,7 @@
 pia v0.2 Features:
 ==========
 - Update openvpn configuration files using any of the 5 available configuration zips.
+- Auto-update whenever PIA releases new configuration zips.
 - Instant connections with secure storage of VPN password.
 - Forward ports and change port fowarding identity.
 - Change DNS to PIA secure leak-proof DNS servers.
