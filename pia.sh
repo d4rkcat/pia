@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## pia v0.2 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
+## pia v0.3 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
 #
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License Version 2 as published by
@@ -108,7 +108,7 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled i
 
 fhelp()						# Help function.
 {
-	echo """Usage: $(basename $0) [Options]
+	echo """Usage: $(basename $0) [options]
 
 	-s	- Server number to connect to.
 	-l	- List available servers.
@@ -124,7 +124,7 @@ fhelp()						# Help function.
 	-h	- Display this help.
 
 Examples: 
-	pia -dps 24 	- Change DNS, forward a port and connect to Switzerland.
+	pia -dps 24 	- Change DNS, forward a port and connect to Sweden.
 	pia -nfv	- Forward a new port, run firewall and be verbose.
 """
 }
@@ -134,9 +134,13 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
-	for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
-		kill -s SIGINT $PID &>/dev/null
-	done
+	if [ $(command -v lsof) ];then
+		for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
+			kill -s SIGINT $PID &>/dev/null
+		done
+	else
+		kill -s SIGINT $VPNPID &>/dev/null
+	fi
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo "$INFO $(ufw disable 2>/dev/null)"
 	elif [ $KILLS -gt 0 ];then
@@ -147,8 +151,14 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 		done
 		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
 	fi
-	echo "$INFO VPN Disconnected."
-	exit 0
+	if [ $RESTARTVPN -eq 1 ];then
+		echo "$PROMPT Restarting VPN..."
+		RESTARTVPN=0
+		fconnect
+	else
+		echo "$INFO VPN Disconnected."
+		exit 0
+	fi
 }
 
 fdnschange()						# Change DNS servers to PIA.
@@ -220,17 +230,6 @@ fchecklog()						# Check openvpn logs to get connection state.
 	done
 }
 
-fcheckinput()						# Check if user supplied server number is valid.
-{
-	if [[ $SERVERNUM =~ ^[0-9]+$ && $SERVERNUM -gt 0 && $SERVERNUM -le $MAXSERVERS ]];then
-		:
-	else
-		flist
-		echo "$ERROR $SERVERNUM is not valid! 1-$MAXSERVERS only."
-		exit 1
-	fi
-}
-
 fping()						# Get latency to VPN server.
 {
 	PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
@@ -249,6 +248,165 @@ fping()						# Get latency to VPN server.
 		SPEEDCOLOR=$BOLD$RED
 		SPEEDNAME="very slow"
 	fi
+}
+
+fcheckupdate()						# Check if a new config zip is available and download.
+{
+	CONFIGNUM=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 1)
+	CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
+	CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
+	CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
+	if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
+		RESTARTVPN=1
+		echo "$ERROR WARNING: OpenVPN configuration is out of date!"
+		echo "$PROMPT New PIA OpenVPN config file available! Updating..."
+		fupdate
+		fvpnreset
+	else
+		if [ $VERBOSE -eq 1 ];then
+			echo "$INFO OpenVPN configuration up to date: $CONFIGMODIFIED"
+		fi
+	fi
+}
+
+fconnect()
+{
+	if [ $VERBOSE -gt 0 ];then
+		echo -n "$PROMPT Testing latency to $DOMAIN..."
+		fping $DOMAIN
+		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                    "
+	fi
+
+	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
+	cd $VPNPATH && openvpn --config $CONFIG --daemon
+	VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
+
+	fchecklog
+
+	case $LOGRETURN in
+		1) echo -e "\r$INFO$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    ";;
+		2) echo -e "\r$ERROR Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;exit 1;;
+		3) echo -e "\r$ERROR OpenVPN failed to resolve $DOMAIN.                    ";kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
+		4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
+		5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
+	esac
+
+	fcheckupdate
+
+	PLOG=$(cat /var/log/pia.log)
+	if [ $VERBOSE -gt 0 ];then
+		echo "$INFO OpenVPN Logs:"
+		echo -n $CYAN
+		while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
+		echo "$RESET$PROMPT OpenVPN Settings:"
+		SETTINGS=$(cat $VPNPATH/$CONFIG)
+		if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$GREEN UDP$RESET Protocol."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'proto tcp' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$CYAN TCP$RESET Protocol."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'ca.rsa.2048.crt' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$CYAN 2048 Bit RSA$RESET Certificate."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'ca.rsa.4096.crt' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$GREEN 4096 Bit RSA$RESET Certificate."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'cipher aes-128-cbc' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$CYAN 128 Bit AES-CBC$RESET Cipher."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'cipher aes-256-cbc' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$GREEN 256 Bit AES-CBC$RESET Cipher."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'auth sha1' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$CYAN SHA1$RESET Authentication."
+		fi
+		if [ $(echo "$SETTINGS" | grep 'auth sha256' | wc -c) -gt 3 ];then
+			echo "$INFO$BOLD$GREEN SHA256$RESET Authentication."
+		fi
+
+		NEWIP=''
+		CURRIP=$(cat /tmp/ip.txt)
+		rm /tmp/ip.txt
+		echo  -n "$PROMPT Fetching IP..."
+		sleep 1.5
+		CNT=0
+		while [[ $(echo $NEWIP | wc -c) -lt 2 && $CNT -lt 2 ]];do
+			NEWIP=$(curl -s -m 4 icanhazip.com)
+			((++CNT))
+		done
+
+		if [ $(echo $NEWIP | wc -c) -gt 2 ];then
+			WHOISOLD="$(whois $CURRIP)"
+			WHOISNEW="$(whois $NEWIP)"
+			COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
+			COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
+			DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
+			DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
+			
+			echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
+			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
+			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
+			echo -e "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
+			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
+			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+		else
+			echo -e "\r$ERROR Failed to fetch new IP.                   "
+		fi
+	fi
+
+	if [ $DNS -gt 0 ];then
+		fdnschange
+	fi
+
+	if [ $MACE -gt 0 ];then
+		fmace
+	fi
+
+	if [ $FIREWALL -gt 0 ];then
+		ffirewall
+	fi
+
+	if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+		echo "$PROMPT Killswitch activated."
+	fi
+
+	if [ $PORTFORWARD -gt 0 ];then
+		case $SERVERNAME in
+			"Netherlands") fforward;;
+			"Switzerland") fforward;;
+			"CA_Toronto") fforward;;
+			"CA_Montreal") fforward;;
+			"Romania") fforward;;
+			"Israel") fforward;;
+			"Sweden") fforward;;
+			"France") fforward;;
+			"Germany") fforward;;
+			"CA_Vancouver") fforward;;
+			*) NOPORT=1;;
+		esac
+		if [ $NOPORT -eq 0 ];then
+			if [ $NEWPORT -gt 0 ]; then
+				echo -e "\r$INFO Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+			else
+				if [ $VERBOSE -gt 0 ];then
+					echo -e "\r$PROMPT Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
+				fi
+			fi
+
+			if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
+				echo -e "\r$INFO Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you.                    "
+			else
+				echo -e "\r$ERROR $SERVERNAME failed to forward us a port!                   "
+			fi
+		else
+			echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
+		fi
+	fi
+
+	echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
+	read -p "" WAITVAR
+	fvpnreset
 }
 
 						# Colour codes for terminal.
@@ -281,6 +439,7 @@ FLAN=0
 UNKNOWNOS=0
 MISSINGDEP=0
 CONFIGNUM=0
+RESTARTVPN=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
@@ -357,155 +516,18 @@ if [ $SERVERNUM -lt 1 ];then
 	clear
 fi
 
-fcheckinput
+trap fvpnreset INT
+
+if [[ $SERVERNUM =~ ^[0-9]+$ && $SERVERNUM -gt 0 && $SERVERNUM -le $MAXSERVERS ]];then
+	:
+else
+	flist
+	echo "$ERROR $SERVERNUM is not valid! 1-$MAXSERVERS only."
+	exit 1
+fi
+
 SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
 DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
 CONFIG=$SERVERNAME.ovpn
 
-if [ $VERBOSE -gt 0 ];then
-	echo -n "$PROMPT Testing latency to $DOMAIN..."
-	fping $DOMAIN
-	echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                    "
-fi
-
-trap fvpnreset INT
-echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
-cd $VPNPATH && openvpn --config $CONFIG --daemon
-VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
-
-fchecklog
-
-case $LOGRETURN in
-	1) echo -e "\r$INFO$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    ";;
-	2) echo -e "\r$ERROR Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;exit 1;;
-	3) echo -e "\r$ERROR OpenVPN failed to resolve $DOMAIN.                    ";kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
-	4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
-	5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
-esac
-
-						# Check if a new config zip is available and download.
-CONFIGNUM=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 1)
-CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
-CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
-CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
-if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
-	echo "$ERROR WARNING: OpenVPN configuration is out of date!"
-	echo "$PROMPT New PIA OpenVPN config file available! Updating..."
-	fupdate
-	fvpnreset
-fi
-
-PLOG=$(cat /var/log/pia.log)
-if [ $VERBOSE -gt 0 ];then
-	echo "$INFO OpenVPN Logs:"
-	echo -n $CYAN
-	while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
-	echo "$RESET$PROMPT OpenVPN Settings:"
-	SETTINGS=$(cat $VPNPATH/$CONFIG)
-	if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$GREEN UDP$RESET Protocol."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'proto tcp' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$CYAN TCP$RESET Protocol."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'ca.rsa.2048.crt' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$CYAN 2048 Bit RSA$RESET Certificate."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'ca.rsa.4096.crt' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$GREEN 4096 Bit RSA$RESET Certificate."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'cipher aes-128-cbc' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$CYAN 128 Bit AES-CBC$RESET Cipher."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'cipher aes-256-cbc' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$GREEN 256 Bit AES-CBC$RESET Cipher."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'auth sha1' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$CYAN SHA1$RESET Authentication."
-	fi
-	if [ $(echo "$SETTINGS" | grep 'auth sha256' | wc -c) -gt 3 ];then
-		echo "$INFO$BOLD$GREEN SHA256$RESET Authentication."
-	fi
-
-	NEWIP=''
-	CURRIP=$(cat /tmp/ip.txt)
-	rm /tmp/ip.txt
-	echo  -n "$PROMPT Fetching IP..."
-	sleep 1.5
-	CNT=0
-	while [[ $(echo $NEWIP | wc -c) -lt 2 && $CNT -lt 2 ]];do
-		NEWIP=$(curl -s -m 4 icanhazip.com)
-		((++CNT))
-	done
-
-	if [ $(echo $NEWIP | wc -c) -gt 2 ];then
-		WHOISOLD="$(whois $CURRIP)"
-		WHOISNEW="$(whois $NEWIP)"
-		COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
-		COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
-		DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
-		DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
-		
-		echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
-		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
-		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
-		echo -e "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
-		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
-		while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
-	else
-		echo -e "\r$ERROR Failed to fetch new IP.                   "
-	fi
-fi
-
-if [ $DNS -gt 0 ];then
-	fdnschange
-fi
-
-if [ $MACE -gt 0 ];then
-	fmace
-fi
-
-if [ $FIREWALL -gt 0 ];then
-	ffirewall
-fi
-
-if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
-	echo "$PROMPT Killswitch activated."
-fi
-
-if [ $PORTFORWARD -gt 0 ];then
-	case $SERVERNAME in
-		"Netherlands") fforward;;
-		"Switzerland") fforward;;
-		"CA_Toronto") fforward;;
-		"CA_Montreal") fforward;;
-		"Romania") fforward;;
-		"Israel") fforward;;
-		"Sweden") fforward;;
-		"France") fforward;;
-		"Germany") fforward;;
-		"CA_Vancouver") fforward;;
-		*) NOPORT=1;;
-	esac
-	if [ $NOPORT -eq 0 ];then
-		if [ $NEWPORT -gt 0 ]; then
-			echo -e "\r$INFO Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
-		else
-			if [ $VERBOSE -gt 0 ];then
-				echo -e "\r$PROMPT Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
-			fi
-		fi
-
-		if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
-			echo -e "\r$INFO Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you.                    "
-		else
-			echo -e "\r$ERROR $SERVERNAME failed to forward us a port!                   "
-		fi
-	else
-		echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
-	fi
-fi
-
-echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
-read -p "" WAITVAR
-fvpnreset
+fconnect

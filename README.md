@@ -1,4 +1,4 @@
-pia v0.2 Features:
+pia v0.3 Features:
 ==========
 - Update openvpn configuration files using any of the 5 available configuration zips.
 - Auto-update whenever PIA releases new configuration zips.
@@ -12,6 +12,9 @@ pia v0.2 Features:
 - Designed for debian and arch based linux but should work on any linux.
 
 This client has all of the functionality of the official one and works on any linux with bash, openvpn and ufw installed.  
+
+
+It also has the added advantage of using the versions of OpenVPN and OpenSSL installed on your system, which will always be more secure than the old fork of old versions of this software that the official PIA app uses.
 
 
 pia can be run interactivley or with switches. It will only ask you to supply your credentials once and then after that it connects without asking.  
@@ -34,11 +37,11 @@ Dependencies:
 Installation:
 ==========
 Run 'sudo make install' in the pia directory.
-pia will now be installed and can be run with 'sudo pia'.
+pia will now be installed and can be run from any directory with 'sudo pia [options]'.
 
 Usage
 ==========
-	Usage: pia [Options]
+	Usage: pia [options]
 
 	-s	- Server number to connect to.
 	-l	- List available servers.
@@ -54,5 +57,5 @@ Usage
 	-h	- Display this help.
 
 	Examples: 
-	pia -dps 24 	- Change DNS, forward a port and connect to Switzerland.
+	pia -dps 24 	- Change DNS, forward a port and connect to Sweden.
 	pia -nfv	- Forward a new port, run firewall and be verbose.
