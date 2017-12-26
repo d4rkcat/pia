@@ -255,17 +255,26 @@ fcheckupdate()						# Check if a new config zip is available and download.
 	CONFIGNUM=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 1)
 	CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
 	CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
-	CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
-	if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
-		RESTARTVPN=1
-		echo "$ERROR WARNING: OpenVPN configuration is out of date!"
-		echo "$PROMPT New PIA OpenVPN config file available! Updating..."
-		fupdate
-		fvpnreset
-	else
-		if [ $VERBOSE -eq 1 ];then
-			echo "$INFO OpenVPN configuration up to date: $CONFIGMODIFIED"
+	CONFIGMODIFIED=''
+	CNT=0
+	while [[ $(echo $CONFIGMODIFIED | wc -c) -lt 6 && $CNT -lt 3 ]];do
+		CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
+		((++CNT))
+	done
+	if [ $(echo $CONFIGMODIFIED | wc -c) -gt 6 ];then
+		if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
+			RESTARTVPN=1
+			echo "$ERROR WARNING: OpenVPN configuration is out of date!"
+			echo "$PROMPT New PIA OpenVPN config file available! Updating..."
+			fupdate
+			fvpnreset
+		else
+			if [ $VERBOSE -eq 1 ];then
+				echo "$INFO OpenVPN configuration up to date: $CONFIGMODIFIED"
+			fi
 		fi
+	else
+		echo "$ERROR Failed to check OpenVPN config Last-Modified date!"
 	fi
 }
 
@@ -274,7 +283,7 @@ fconnect()
 	if [ $VERBOSE -gt 0 ];then
 		echo -n "$PROMPT Testing latency to $DOMAIN..."
 		fping $DOMAIN
-		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                    "
+		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                       "
 	fi
 
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
@@ -345,11 +354,19 @@ fconnect()
 			DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
 			
 			echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
-			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
-			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
-			echo -e "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
-			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
-			while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+			if [ $(echo $COUNTRYOLD | wc -c) -gt 8 ];then
+				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
+			fi
+			if [ $(echo $DESCROLD | wc -c) -gt 8 ];then
+				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
+			fi
+			echo "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
+			if [ $(echo $COUNTRYNEW | wc -c) -gt 8 ];then
+				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
+			fi
+			if [ $(echo $DESCRNEW | wc -c) -gt 8 ];then
+				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+			fi
 		else
 			echo -e "\r$ERROR Failed to fetch new IP.                   "
 		fi
