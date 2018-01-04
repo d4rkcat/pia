@@ -65,6 +65,9 @@ fupdate()						# Update the PIA openvpn files.
 		OLD="ca ca.rsa.4096.crt"
 		NEW="ca $VPNPATH/ca.rsa.4096.crt"
 		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
+		OLD="verb 1"
+		NEW="verb 2"
+		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
 		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
 		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
 		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
@@ -236,15 +239,15 @@ fping()						# Get latency to VPN server.
 	PINGINT=$(echo $PING | cut -d '.' -f 1)
 	SPEEDCOLOR=$BOLD$GREEN
 	SPEEDNAME="fast"
-	if [ $PINGINT -gt 40 ];then
+	if [ $PINGINT -gt 39 ];then
 		SPEEDCOLOR=$BOLD$CYAN
 		SPEEDNAME="medium"
 	fi
-	if [ $PINGINT -gt 80 ];then
+	if [ $PINGINT -gt 79 ];then
 		SPEEDCOLOR=$BOLD$BLUE
 		SPEEDNAME="slow"
 	fi
-	if [ $PINGINT -gt 160 ];then
+	if [ $PINGINT -gt 159 ];then
 		SPEEDCOLOR=$BOLD$RED
 		SPEEDNAME="very slow"
 	fi
@@ -501,7 +504,6 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
 LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
 ufw disable&>/dev/null
 
@@ -525,6 +527,7 @@ do
 done
 
 if [ ! -f $VPNPATH/servers.txt ];then fupdate;fi
+MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
 
 if [ $SERVERNUM -lt 1 ];then
 	echo "$PROMPT Please choose a server: "
