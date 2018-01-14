@@ -105,18 +105,19 @@ ffirewall()						# Set up iptables firewall rules to only allow traffic on tunne
 	iptables -P FORWARD DROP						# default policy for forwarded packets
 
 	# allowed outputs
-	iptables -A OUTPUT --out-interface lo -j ACCEPT						# enable localhost
-	iptables -A OUTPUT --out-interface $DEVICE -j ACCEPT						# enable outgoing connections on tunnel
+	iptables -A OUTPUT -o lo -j ACCEPT						# enable localhost
+	iptables -A OUTPUT -o $DEVICE -j ACCEPT						# enable outgoing connections on tunnel
 	iptables -A OUTPUT -p tcp --dport $VPNPORT -j ACCEPT						# enable port for establishing/reconnecting to VPN
 	iptables -A OUTPUT -p udp --dport $VPNPORT -j ACCEPT
 
 	# allowed inputs
-	iptables -A INPUT --in-interface lo -j ACCEPT						# enable localhost
+	iptables -A INPUT -i lo -j ACCEPT						# enable localhost
 	iptables -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT						# enable ping from other machines
 	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT						# enable requested packets
 
 	if [ $PORTFORWARD -eq 1 ];then
-		iptables -A INPUT --in-interface $DEVICE -j ACCEPT						# enable incoming connections on tunnel for port forwarding
+		iptables -A INPUT -i $DEVICE -p tcp --dport $FORWARDEDPORT -j ACCEPT						# enable port forwarding
+		iptables -A INPUT -i $DEVICE -p udp --dport $FORWARDEDPORT -j ACCEPT
 	fi
 
 	if [ $FLAN -eq 1 ];then
@@ -406,18 +407,6 @@ fconnect()
 		fi
 	fi
 
-	if [ $DNS -gt 0 ];then
-		fdnschange
-	fi
-
-	if [ $MACE -gt 0 ];then
-		fmace
-	fi
-
-	if [ $FIREWALL -gt 0 ];then
-		ffirewall
-	fi
-
 	if [ $PORTFORWARD -gt 0 ];then
 		case $SERVERNAME in
 			"Netherlands") fforward;;
@@ -449,6 +438,18 @@ fconnect()
 		else
 			echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
 		fi
+	fi
+
+	if [ $DNS -gt 0 ];then
+		fdnschange
+	fi
+
+	if [ $MACE -gt 0 ];then
+		fmace
+	fi
+
+	if [ $FIREWALL -gt 0 ];then
+		ffirewall
 	fi
 
 	echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
@@ -576,7 +577,7 @@ SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{p
 DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
 CONFIG=$SERVERNAME.ovpn
 
-if [ -f $VPNPATH/.killswitch];then
+if [ -f $VPNPATH/.killswitch ];then
 	fresetfirewall
 	rm -rf $VPNPATH/.killswitch
 fi
