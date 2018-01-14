@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## pia v0.3 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
+## pia v0.4 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
 #
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License Version 2 as published by
@@ -95,18 +95,45 @@ fnewport()						# Change port forwarded.
 	head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id
 }
 
-ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled interface and within LAN.
+ffirewall()						# Set up iptables firewall rules to only allow traffic on tunneled interface and (optionally) within LAN.
 {
+	fresetfirewall
 	DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
-	ufw default deny outgoing &>/dev/null
-	ufw default deny incoming &>/dev/null
-	ufw allow in on $DEVICE from 0.0.0.0/0 &>/dev/null
-	ufw allow out on $DEVICE to 0.0.0.0/0 &>/dev/null
-	if [ $FLAN -eq 1 ];then
-		ufw allow in from $LAN &>/dev/null
-		ufw allow out to $LAN &>/dev/null
+	VPNPORT=$(cat $VPNPATH/$CONFIG | grep 'remote ' | awk '{print $3}')
+	iptables -P OUTPUT DROP						# default policy for outgoing packets
+	iptables -P INPUT DROP						# default policy for incoming packets
+	iptables -P FORWARD DROP						# default policy for forwarded packets
+
+	# allowed outputs
+	iptables -A OUTPUT --out-interface lo -j ACCEPT						# enable localhost
+	iptables -A OUTPUT --out-interface $DEVICE -j ACCEPT						# enable outgoing connections on tunnel
+	iptables -A OUTPUT -p tcp --dport $VPNPORT -j ACCEPT						# enable port for establishing/reconnecting to VPN
+	iptables -A OUTPUT -p udp --dport $VPNPORT -j ACCEPT
+
+	# allowed inputs
+	iptables -A INPUT --in-interface lo -j ACCEPT						# enable localhost
+	iptables -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT						# enable ping from other machines
+	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT						# enable requested packets
+
+	if [ $PORTFORWARD -eq 1 ];then
+		iptables -A INPUT --in-interface $DEVICE -j ACCEPT						# enable incoming connections on tunnel for port forwarding
 	fi
-	echo "$INFO $(ufw enable 2>/dev/null)."
+
+	if [ $FLAN -eq 1 ];then
+		iptables -A OUTPUT -p tcp -d $LAN -j ACCEPT						# enable incoming and outgoing connections within LAN
+		iptables -A INPUT -p tcp -s $LAN -j ACCEPT
+	fi
+	echo "$INFO Firewall enabled."
+}
+
+fresetfirewall()
+{
+	iptables --policy INPUT ACCEPT
+	iptables --policy OUTPUT ACCEPT
+	iptables --policy FORWARD ACCEPT
+	iptables -Z
+	iptables -F
+	iptables -X
 }
 
 fhelp()						# Help function.
@@ -127,7 +154,7 @@ fhelp()						# Help function.
 	-h	- Display this help.
 
 Examples: 
-	pia -dps 24 	- Change DNS, forward a port and connect to Sweden.
+	pia -dps 6  	- Change DNS, forward a port and connect to CA_Montreal.
 	pia -nfv	- Forward a new port, run firewall and be verbose.
 """
 }
@@ -145,14 +172,15 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 		kill -s SIGINT $VPNPID &>/dev/null
 	fi
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
-		echo "$INFO $(ufw disable 2>/dev/null)"
-	elif [ $KILLS -gt 0 ];then
-		CNT=0
-		while [ $CNT -lt 5 ];do
-			echo y | ufw delete 1&>/dev/null
-			((++CNT))
-		done
+		fresetfirewall
+		echo "$INFO Firewall disabled."
+	elif [[ $KILLS -gt 0 && $RESTARTVPN -lt 1 ]];then
 		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
+		fresetfirewall
+		echo > $VPNPATH/.killswitch
+		iptables -P OUTPUT DROP
+		iptables -P INPUT DROP
+		iptables -P FORWARD DROP
 	fi
 	if [ $RESTARTVPN -eq 1 ];then
 		echo "$PROMPT Restarting VPN..."
@@ -289,6 +317,9 @@ fconnect()
 		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                       "
 	fi
 
+	if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+		echo "$PROMPT Killswitch activated."
+	fi
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
 	cd $VPNPATH && openvpn --config $CONFIG --daemon
 	VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
@@ -387,10 +418,6 @@ fconnect()
 		ffirewall
 	fi
 
-	if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
-		echo "$PROMPT Killswitch activated."
-	fi
-
 	if [ $PORTFORWARD -gt 0 ];then
 		case $SERVERNAME in
 			"Netherlands") fforward;;
@@ -477,16 +504,16 @@ fi
 
 if [ $UNKNOWNOS -gt 0 ];then
 	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
-	command -v ufw >/dev/null 2>&1 || MISSINGDEP=1
+	command -v iptables >/dev/null 2>&1 || MISSINGDEP=1
 	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
 	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
 	if [ $MISSINGDEP -eq 1 ];then
-		echo "$ERROR OS not identified as arch or debian based, please install openvpn, ufw, curl and unzip and run script again."
+		echo "$ERROR OS not identified as arch or debian based, please install openvpn, iptables, curl and unzip and run script again."
 		exit 1
 	fi
 else
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";$INSTALLCMD openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";$INSTALLCMD ufw; }
+	command -v iptables >/dev/null 2>&1 || { echo >&2 "$INFO iptables required, installing...";$INSTALLCMD iptables; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
 	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
 fi
@@ -505,7 +532,6 @@ if [ ! -f $VPNPATH/pass.txt ];then
 fi
 
 LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
-ufw disable&>/dev/null
 
 while getopts "lhupnmkdfves:" opt
 do
@@ -549,5 +575,10 @@ fi
 SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
 DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
 CONFIG=$SERVERNAME.ovpn
+
+if [ -f $VPNPATH/.killswitch];then
+	fresetfirewall
+	rm -rf $VPNPATH/.killswitch
+fi
 
 fconnect
