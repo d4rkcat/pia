@@ -33,12 +33,17 @@ Dependencies:
 - openvpn
 - curl
 - unzip
+- git
 
 Installation:
 ==========
-Run 'sudo make install' in the pia directory.
-pia will now be installed and can be run from any directory with  
+Clone the repository to a suitable place:
+`cd ~/scripts && git clone https://github.com/d4rkcat/pia`
 
+Then to install the script:
+`cd ~/scripts/pia && sudo make install`
+
+pia will now be installed and can be run from any directory with:
 `sudo pia [options]`
 
 Usage

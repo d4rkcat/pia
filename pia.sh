@@ -49,25 +49,14 @@ fupdate()						# Update the PIA openvpn files.
 	echo "$CONFIGNUM $DOWNURL $(curl -sI $DOWNURL | grep Last-Modified | cut -d ' ' -f 2-)" > $VPNPATH/configversion.txt
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
 	cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
+	OLDS=("auth-user-pass" "crl-verify crl.rsa.2048.pem" "crl-verify crl.rsa.4096.pem" "ca ca.rsa.2048.crt" "ca ca.rsa.4096.crt" "verb 1")
+	NEWS=("auth-user-pass $VPNPATH/pass.txt" "crl-verify $VPNPATH/crl.rsa.2048.pem" "crl-verify $VPNPATH/crl.rsa.4096.pem" "ca $VPNPATH/ca.rsa.2048.crt" "ca $VPNPATH/ca.rsa.4096.crt" "verb 2")
 	for CONFIGFILE in $VPNPATH/*.ovpn;do
-		OLD="auth-user-pass"
-		NEW="auth-user-pass $VPNPATH/pass.txt"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
-		OLD="crl-verify crl.rsa.2048.pem"
-		NEW="crl-verify $VPNPATH/crl.rsa.2048.pem"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
-		OLD="crl-verify crl.rsa.4096.pem"
-		NEW="crl-verify $VPNPATH/crl.rsa.4096.pem"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
-		OLD="ca ca.rsa.2048.crt"
-		NEW="ca $VPNPATH/ca.rsa.2048.crt"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
-		OLD="ca ca.rsa.4096.crt"
-		NEW="ca $VPNPATH/ca.rsa.4096.crt"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
-		OLD="verb 1"
-		NEW="verb 2"
-		sed -i "s%$OLD%$NEW%g" $CONFIGFILE
+		CNT=0
+		for OLD in "${OLDS[@]}";do 
+			sed -i "s%$OLD%${NEWS[$CNT]}%g" $CONFIGFILE
+			((++CNT))
+		done
 		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
 		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
 		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
@@ -100,6 +89,8 @@ ffirewall()						# Set up iptables firewall rules to only allow traffic on tunne
 	fresetfirewall
 	DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
 	VPNPORT=$(cat $VPNPATH/$CONFIG | grep 'remote ' | awk '{print $3}')
+	PROTO=$(cat $VPNPATH/$CONFIG | grep proto | awk '{print $2}')
+
 	iptables -P OUTPUT DROP						# default policy for outgoing packets
 	iptables -P INPUT DROP						# default policy for incoming packets
 	iptables -P FORWARD DROP						# default policy for forwarded packets
@@ -107,12 +98,14 @@ ffirewall()						# Set up iptables firewall rules to only allow traffic on tunne
 	# allowed outputs
 	iptables -A OUTPUT -o lo -j ACCEPT						# enable localhost
 	iptables -A OUTPUT -o $DEVICE -j ACCEPT						# enable outgoing connections on tunnel
-	iptables -A OUTPUT -p tcp --dport $VPNPORT -j ACCEPT						# enable port for establishing/reconnecting to VPN
-	iptables -A OUTPUT -p udp --dport $VPNPORT -j ACCEPT
+	if [[ "$PROTO" == "udp" ]];then
+		iptables -A OUTPUT -p udp --dport $VPNPORT -j ACCEPT						# enable port for establishing/reconnecting to VPN
+	else
+		iptables -A OUTPUT -p tcp --dport $VPNPORT -j ACCEPT
+	fi
 
 	# allowed inputs
 	iptables -A INPUT -i lo -j ACCEPT						# enable localhost
-	iptables -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT						# enable ping from other machines
 	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT						# enable requested packets
 
 	if [ $PORTFORWARD -eq 1 ];then
@@ -121,8 +114,8 @@ ffirewall()						# Set up iptables firewall rules to only allow traffic on tunne
 	fi
 
 	if [ $FLAN -eq 1 ];then
-		iptables -A OUTPUT -p tcp -d $LAN -j ACCEPT						# enable incoming and outgoing connections within LAN
-		iptables -A INPUT -p tcp -s $LAN -j ACCEPT
+		iptables -A OUTPUT -d $LAN -j ACCEPT						# enable incoming and outgoing connections within LAN (potentially dangerous!)
+		iptables -A INPUT -s $LAN -j ACCEPT
 	fi
 	echo "$INFO Firewall enabled."
 }
@@ -580,6 +573,7 @@ CONFIG=$SERVERNAME.ovpn
 if [ -f $VPNPATH/.killswitch ];then
 	fresetfirewall
 	rm -rf $VPNPATH/.killswitch
+	echo "$INFO Killswitch disabled."
 fi
 
 fconnect
