@@ -188,6 +188,9 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 
 fdnschange()						# Change DNS servers to PIA.
 {
+	if [ $(command -v pacman) ];then
+		systemctl stop systemd-resolved.service
+	fi
 	echo "$INFO Changed DNS to PIA servers."
 	cp /etc/resolv.conf /etc/resolv.conf.bak
 	echo '''#PIA DNS Servers
@@ -205,6 +208,9 @@ fmace()						# Enable PIA MACE DNS based ad blocking.
 
 fdnsrestore()						# Revert to original DNS servers.
 {
+	if [ $(command -v pacman) ];then
+		systemctl start systemd-resolved.service
+	fi
 	echo "$INFO Restored DNS servers."
 	cp /etc/resolv.conf.bak /etc/resolv.conf
 }
