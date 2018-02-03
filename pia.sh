@@ -87,35 +87,37 @@ fnewport()						# Change port forwarded.
 ffirewall()						# Set up iptables firewall rules to only allow traffic on tunneled interface and (optionally) within LAN.
 {
 	fresetfirewall
-	DEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
+	LAN=$(ip route show | grep default | awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
+	DEFAULTDEVICE=$(ip route show | grep default | awk '{print $5}')
+	VPNDEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
 	VPNPORT=$(cat $VPNPATH/$CONFIG | grep 'remote ' | awk '{print $3}')
 	PROTO=$(cat $VPNPATH/$CONFIG | grep proto | awk '{print $2}')
 
-	iptables -P OUTPUT DROP						# default policy for outgoing packets
-	iptables -P INPUT DROP						# default policy for incoming packets
-	iptables -P FORWARD DROP						# default policy for forwarded packets
+	iptables -P OUTPUT DROP																# default policy for outgoing packets
+	iptables -P INPUT DROP																# default policy for incoming packets
+	iptables -P FORWARD DROP															# default policy for forwarded packets
 
 	# allowed outputs
-	iptables -A OUTPUT -o lo -j ACCEPT						# enable localhost
-	iptables -A OUTPUT -o $DEVICE -j ACCEPT						# enable outgoing connections on tunnel
+	iptables -A OUTPUT -o lo -j ACCEPT													# enable localhost out
+	iptables -A OUTPUT -o $VPNDEVICE -j ACCEPT											# enable outgoing connections on tunnel
 	if [[ "$PROTO" == "udp" ]];then
-		iptables -A OUTPUT -p udp --dport $VPNPORT -j ACCEPT						# enable port for establishing/reconnecting to VPN
+		iptables -A OUTPUT -o $DEFAULTDEVICE -p udp --dport $VPNPORT -j ACCEPT			# enable port for communicating with PIA on default device
 	else
-		iptables -A OUTPUT -p tcp --dport $VPNPORT -j ACCEPT
+		iptables -A OUTPUT -o $DEFAULTDEVICE -p tcp --dport $VPNPORT -j ACCEPT
 	fi
 
 	# allowed inputs
-	iptables -A INPUT -i lo -j ACCEPT						# enable localhost
-	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT						# enable requested packets
+	iptables -A INPUT -i lo -j ACCEPT													# enable localhost in
+	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT					# enable requested packets on tunnel
 
 	if [ $PORTFORWARD -eq 1 ];then
-		iptables -A INPUT -i $DEVICE -p tcp --dport $FORWARDEDPORT -j ACCEPT						# enable port forwarding
-		iptables -A INPUT -i $DEVICE -p udp --dport $FORWARDEDPORT -j ACCEPT
+		iptables -A INPUT -i $VPNDEVICE -p tcp --dport $FORWARDEDPORT -j ACCEPT			# enable port forwarding
+		iptables -A INPUT -i $VPNDEVICE -p udp --dport $FORWARDEDPORT -j ACCEPT
 	fi
 
 	if [ $FLAN -eq 1 ];then
-		iptables -A OUTPUT -d $LAN -j ACCEPT						# enable incoming and outgoing connections within LAN (potentially dangerous!)
-		iptables -A INPUT -s $LAN -j ACCEPT
+		iptables -A OUTPUT -o $DEFAULTDEVICE -d $LAN -j ACCEPT							# enable incoming and outgoing connections within LAN (potentially dangerous!)
+		iptables -A INPUT -i $DEFAULTDEVICE -s $LAN -j ACCEPT
 	fi
 	echo "$INFO Firewall enabled."
 }
@@ -128,6 +130,14 @@ fresetfirewall()
 	iptables -Z
 	iptables -F
 	iptables -X
+}
+
+flockdown()
+{
+	fresetfirewall
+	iptables -P OUTPUT DROP
+	iptables -P INPUT DROP
+	iptables -P FORWARD DROP
 }
 
 fhelp()						# Help function.
@@ -155,34 +165,27 @@ Examples:
 
 fvpnreset()						# Restore all settings and exit openvpn gracefully.
 {
-	if [ $DNS -gt 0 ];then
+	if [ $DNS -eq 1 ];then
 		fdnsrestore
 	fi
-	if [ $(command -v lsof) ];then
-		for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
-			kill -s SIGINT $PID &>/dev/null
-		done
-	else
-		kill -s SIGINT $VPNPID &>/dev/null
-	fi
-	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
-		fresetfirewall
-		echo "$INFO Firewall disabled."
-	elif [[ $KILLS -gt 0 && $RESTARTVPN -lt 1 ]];then
-		echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
-		fresetfirewall
-		echo > $VPNPATH/.killswitch
-		iptables -P OUTPUT DROP
-		iptables -P INPUT DROP
-		iptables -P FORWARD DROP
-	fi
-	if [ $RESTARTVPN -eq 1 ];then
-		echo "$PROMPT Restarting VPN..."
-		RESTARTVPN=0
-		fconnect
-	else
+
+	kill -s SIGINT $VPNPID &>/dev/null
+
+	if [ $RESTARTVPN -eq 0 ];then
+		if [[ $FIREWALL -eq 1 && $KILLS -eq 0 ]];then
+			fresetfirewall
+			echo "$INFO Firewall disabled."
+		elif [[ $KILLS -eq 1 && $RESTARTVPN -lt 1 ]];then
+			echo -e "\r $BOLD$RED[$BOLD$GREEN*$BOLD$RED] WARNING:$RESET Killswitch engaged, no internet will be available until you run this script again."
+			flockdown
+			echo > $VPNPATH/.killswitch
+		fi
+
 		echo "$INFO VPN Disconnected."
 		exit 0
+	else
+		RESTARTVPN=0
+		echo "$PROMPT Restarting VPN..."
 	fi
 }
 
@@ -291,8 +294,6 @@ fcheckupdate()						# Check if a new config zip is available and download.
 			RESTARTVPN=1
 			echo "$ERROR WARNING: OpenVPN configuration is out of date!"
 			echo "$PROMPT New PIA OpenVPN config file available! Updating..."
-			fupdate
-			fvpnreset
 		else
 			if [ $VERBOSE -eq 1 ];then
 				echo "$INFO OpenVPN configuration up to date: $CONFIGMODIFIED"
@@ -305,15 +306,21 @@ fcheckupdate()						# Check if a new config zip is available and download.
 
 fconnect()
 {
-	if [ $VERBOSE -gt 0 ];then
+	if [ $UNLOCK -eq 1 ];then
+		fresetfirewall
+		UNLOCK=0
+	fi
+
+	if [ $VERBOSE -eq 1 ];then
 		echo -n "$PROMPT Testing latency to $DOMAIN..."
 		fping $DOMAIN
 		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                       "
 	fi
 
-	if [[ $KILLS -gt 0 && $VERBOSE -gt 0 ]];then
+	if [[ $KILLS -eq 1 && $VERBOSE -eq 1 ]];then
 		echo "$PROMPT Killswitch activated."
 	fi
+
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
 	cd $VPNPATH && openvpn --config $CONFIG --daemon
 	VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
@@ -329,9 +336,15 @@ fconnect()
 	esac
 
 	fcheckupdate
+	if [ $RESTARTVPN -eq 1 ];then
+		fupdate
+		fvpnreset
+		return 0
+	fi
 
 	PLOG=$(cat /var/log/pia.log)
-	if [ $VERBOSE -gt 0 ];then
+
+	if [ $VERBOSE -eq 1 ];then
 		echo "$INFO OpenVPN Logs:"
 		echo -n $CYAN
 		while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
@@ -364,7 +377,6 @@ fconnect()
 
 		NEWIP=''
 		CURRIP=$(cat /tmp/ip.txt)
-		rm /tmp/ip.txt
 		echo  -n "$PROMPT Fetching IP..."
 		sleep 1.5
 		CNT=0
@@ -400,7 +412,7 @@ fconnect()
 		fi
 	fi
 
-	if [ $PORTFORWARD -gt 0 ];then
+	if [ $PORTFORWARD -eq 1 ];then
 		case $SERVERNAME in
 			"Netherlands") fforward;;
 			"Switzerland") fforward;;
@@ -415,10 +427,10 @@ fconnect()
 			*) NOPORT=1;;
 		esac
 		if [ $NOPORT -eq 0 ];then
-			if [ $NEWPORT -gt 0 ]; then
+			if [ $NEWPORT -eq 1 ]; then
 				echo -e "\r$INFO Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
 			else
-				if [ $VERBOSE -gt 0 ];then
+				if [ $VERBOSE -eq 1 ];then
 					echo -e "\r$PROMPT Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
 				fi
 			fi
@@ -433,21 +445,39 @@ fconnect()
 		fi
 	fi
 
-	if [ $DNS -gt 0 ];then
+	if [ $DNS -eq 1 ];then
 		fdnschange
 	fi
 
-	if [ $MACE -gt 0 ];then
+	if [ $MACE -eq 1 ];then
 		fmace
 	fi
 
-	if [ $FIREWALL -gt 0 ];then
+	if [ $FIREWALL -eq 1 ];then
 		ffirewall
 	fi
 
-	echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
-	read -p "" WAITVAR
+	echo -n "$INFO VPN setup complete, press$BOLD$RED Ctrl+C$RESET to shut down."
+	flogwatcher
+	echo -e "\r$ERROR$RED$BOLD WARNING:$RESET New OpenVPN log entries detected:                         "
+	NEWLOGS=$(cat /var/log/pia.log | tail -n +$(($LOGLENGTH + 1)) | sed '/^$/d')
+	while IFS= read -r LNE ; do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
+	RESTARTVPN=1
+	if [ $FIREWALL -eq 1 ];then
+		flockdown
+		UNLOCK=1
+	fi
 	fvpnreset
+}
+
+flogwatcher()
+{
+	LOGLENGTH=$(cat /var/log/pia.log | wc -l)
+	LOGALERT=$LOGLENGTH
+	while [ $LOGALERT -eq $LOGLENGTH ];do
+		sleep 15
+		LOGALERT=$(cat /var/log/pia.log | wc -l)
+	done
 }
 
 						# Colour codes for terminal.
@@ -481,6 +511,7 @@ UNKNOWNOS=0
 MISSINGDEP=0
 CONFIGNUM=0
 RESTARTVPN=0
+UNLOCK=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
@@ -496,7 +527,7 @@ else
 	UNKNOWNOS=1
 fi
 
-if [ $UNKNOWNOS -gt 0 ];then
+if [ $UNKNOWNOS -eq 1 ];then
 	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
 	command -v iptables >/dev/null 2>&1 || MISSINGDEP=1
 	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
@@ -525,8 +556,6 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
-
 while getopts "lhupnmkdfves:" opt
 do
 	case $opt in
@@ -540,7 +569,7 @@ do
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		e) FLAN=1;FIREWALL=1;;
-		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
+		v) VERBOSE=1;curl -m 5 -s icanhazip.com > /tmp/ip.txt&;;
 		s) SERVERNUM=$OPTARG;;
 		*) echo "$ERROR Error: Unrecognized arguments.";fhelp;exit 1;;
 	esac
@@ -571,9 +600,10 @@ DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print
 CONFIG=$SERVERNAME.ovpn
 
 if [ -f $VPNPATH/.killswitch ];then
-	fresetfirewall
+	UNLOCK=1
 	rm -rf $VPNPATH/.killswitch
-	echo "$INFO Killswitch disabled."
 fi
 
-fconnect
+while [ true ];do
+	fconnect
+done

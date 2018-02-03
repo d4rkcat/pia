@@ -2,6 +2,7 @@ pia v0.4 Features:
 ==========
 - Update openvpn configuration files using any of the 5 available configuration zips.
 - Auto-update whenever PIA releases new configuration zips.
+- Auto reconnect on dropped connections.
 - Instant connections with secure storage of VPN password.
 - Forward ports and change port fowarding identity.
 - Change DNS to PIA secure leak-proof DNS servers.
@@ -11,10 +12,10 @@ pia v0.4 Features:
 - Detailed vebose output.
 - Designed for debian and arch based linux but should work on any linux.
 
-This client has all of the functionality of the official one and works on any linux with bash, openvpn and ufw installed.  
+This client has all of the functionality of the official one and works on any linux with bash, openvpn and iptables installed.  
 
 
-It also has the added advantage of using the versions of OpenVPN and OpenSSL installed on your system, which will always be more secure than the old fork of old versions of this software that the official PIA app uses as long as you regulary update.
+It also has the added advantage of using the versions of OpenVPN and OpenSSL installed on your system, which will always be more secure than the old fork of old versions of this software that the official PIA app uses as long as you regulary update.  
 
 
 pia can be run interactivley or with switches. It will only ask you to supply your credentials once and then after that it connects without asking.  
@@ -37,13 +38,13 @@ Dependencies:
 
 Installation:
 ==========
-Clone the repository to a suitable place:
+Clone the repository to a suitable place:  
 `cd ~/scripts && git clone https://github.com/d4rkcat/pia`
 
-Then to install the script:
+Then to install the script:  
 `cd ~/scripts/pia && sudo make install`
 
-pia will now be installed and can be run from any directory with:
+pia will now be installed and can be run from any directory with:  
 `sudo pia [options]`
 
 Usage
