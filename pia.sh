@@ -12,8 +12,43 @@
 ## GNU General Public License at (http://www.gnu.org/licenses/) for
 ## more details.
 
+_SAVE_ARGS=("$@")
+_DEPENDENCIES=(openvpn ufw curl unzip)
+
+								# Re-run as root as needed.
+fcheckroot()
+{
+	if [ $(id -u) != 0 ]; then
+		echo "$INFO Re-running script as root..."
+		FULLSCRIPTPATH=$(readlink -f "${BASH_SOURCE[0]}")
+		exec sudo "$FULLSCRIPTPATH" "${_SAVE_ARGS[@]}"
+	fi
+}
+
+fcheckdependencies()
+{
+	local missing=()
+	for dep in "${_DEPENDENCIES[@]}"; do
+		command -v $dep > /dev/null 2>&1 || missing+=($dep)
+	done
+	if [ ${#missing[@]} -gt 0 ]; then
+		if [ -n "$INSTALLCMD" ];then
+			fcheckroot
+			for dep in "${missing[@]}"; do
+				echo >&2 "$INFO $dep required, installing..."; $INSTALLCMD $dep
+			done
+		else
+			echo "$ERROR OS not identified as arch or debian based, please install the following and run this script again."
+			echo "$ERROR    Missing components: ${missing[@]}"
+			exit 1
+		fi
+	fi
+}
+
 fupdate()						# Update the PIA openvpn files.
 {
+	fcheckroot
+
 	CONFIGDEFAULT="https://www.privateinternetaccess.com/openvpn/openvpn.zip"
 	CONFIGSTRONG="https://www.privateinternetaccess.com/openvpn/openvpn-strong.zip"
 	CONFIGIP="https://www.privateinternetaccess.com/openvpn/openvpn-ip.zip"
@@ -86,6 +121,7 @@ fforward()						# Forward a port.
 
 fnewport()						# Change port forwarded.
 {
+	fcheckroot
 	NEWPORT=1
 	PORTFORWARD=1
 	mv $VPNPATH/client_id $VPNPATH/client_id.bak
@@ -108,22 +144,26 @@ ffirewall()						# Set up ufw firewall rules to only allow traffic on tunneled i
 
 fhelp()						# Help function.
 {
-	echo """Usage: $(basename $0) [options]
+	echo """Usage: $(basename $0 .sh) [options]
 
 	-s	- Server number to connect to.
 	-l	- List available servers.
+	-r	- Reset and terminate current VPN connection.
 	-u	- Update PIA openvpn files before connecting.
 	-p	- Forward a port.
 	-n	- Change to another random port.
 	-d	- Change DNS servers to PIA.
-	-f	- Enable firewall to block all non tunnel traffic.
+	-f	- Enable firewall to block all non-tunnel traffic.
 	-e	- Allow LAN through firewall.
 	-m	- Enable PIA MACE ad blocking.
 	-k	- Enable internet killswitch.
+	-g	- Display GeoIP data.
 	-v	- Display verbose information.
+	-j	- Write JSON VPN data to $DEFAULTJSONOUTPUTPATH.
+	-b	- Exit with VPN running in the background.
 	-h	- Display this help.
 
-Examples: 
+Examples:
 	pia -dps 24 	- Change DNS, forward a port and connect to Sweden.
 	pia -nfv	- Forward a new port, run firewall and be verbose.
 """
@@ -131,15 +171,20 @@ Examples:
 
 fvpnreset()						# Restore all settings and exit openvpn gracefully.
 {
+	fcheckroot
+
 	if [ $DNS -gt 0 ];then
 		fdnsrestore
 	fi
 	if [ $(command -v lsof) ];then
-		for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do                                                                                         
+		for PID in $(lsof -i | grep openvpn | awk '{ print $2 }'); do
 			kill -s SIGINT $PID &>/dev/null
 		done
 	else
-		kill -s SIGINT $VPNPID &>/dev/null
+		test -n "$VPNPID" || fopenvpnruncheck
+		if [ -n "$VPNPID" ]; then
+			kill -s SIGINT $VPNPID &>/dev/null
+		fi
 	fi
 	if [[ $FIREWALL -gt 0 && $KILLS -eq 0 ]];then
 		echo "$INFO $(ufw disable 2>/dev/null)"
@@ -189,7 +234,7 @@ flist()						# List available servers.
 	if [ ! -f $VPNPATH/servers.txt ];then
 		fupdate
 	fi
-	
+
 	echo "$INFO$BOLD$GREEN Green$RESET servers allow port forwarding."
 	for i in $(seq $(cat $VPNPATH/servers.txt | wc -l));do
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
@@ -278,6 +323,25 @@ fcheckupdate()						# Check if a new config zip is available and download.
 	fi
 }
 
+fdisplaygeoip()
+{
+	python - <<EOF
+import json
+import urllib2
+my_ip = urllib2.urlopen('http://icanhazip.com').read().strip()
+geoip_data = json.load(urllib2.urlopen('http://freegeoip.net/json/%s' % my_ip))
+print('$INFO GeoIP Data for WAN IP address $BOLD$GREEN{}$RESET'.format(my_ip))
+two_column_format = '%%-%ds  $BOLD$GREEN%%s$RESET' % max(len(k) for k in geoip_data)
+for key in sorted(geoip_data.keys()):
+	print two_column_format % (key, geoip_data[key])
+EOF
+}
+
+fopenvpnruncheck()
+{
+	VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
+}
+
 fconnect()
 {
 	if [ $VERBOSE -gt 0 ];then
@@ -288,7 +352,7 @@ fconnect()
 
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
 	cd $VPNPATH && openvpn --config $CONFIG --daemon
-	VPNPID=$(ps aux | grep openvpn | grep root | grep -v grep | awk '{print $2}')
+	fopenvpnruncheck
 
 	fchecklog
 
@@ -352,7 +416,7 @@ fconnect()
 			COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
 			DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
 			DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
-			
+
 			echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
 			if [ $(echo $COUNTRYOLD | wc -c) -gt 8 ];then
 				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
@@ -421,17 +485,62 @@ fconnect()
 		fi
 	fi
 
-	echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
-	read -p "" WAITVAR
-	fvpnreset
+	fwritejsonoutput
+
+	if [ $BACKGROUNDVPN -ne 1 ];then
+		echo -n "$INFO VPN setup complete, press$BOLD$RED ENTER$RESET or$BOLD$RED Ctrl+C$RESET to shut down."
+		read -p "" WAITVAR
+		fvpnreset
+	fi
+}
+
+fwritejsonoutput()
+{
+	test -n "$JSONOUTPUTPATH" || return
+	# Write simple JSON file with basic data as strings.
+	test -f "$JSONOUTPUTPATH" && rm -f "$JSONOUTPUTPATH"
+	for envname in	CONFIG DOMAIN FORWARDEDPORT SERVERNAME VPNPATH VPNPID; do
+		if [ -e "$JSONOUTPUTPATH" ]; then
+			echo "," >> "$JSONOUTPUTPATH"
+		else
+			echo "{" > "$JSONOUTPUTPATH"
+		fi
+		varname=$(echo $envname | tr "A-Z" "a-z")
+		local varvalue=$(eval echo "\$$envname")
+		printf '"%s": "%s"' "$varname" "$varvalue" >> "$JSONOUTPUTPATH"
+	done
+	echo "" >> "$JSONOUTPUTPATH"
+	echo "}" >> "$JSONOUTPUTPATH"
+	# Add IP and GeoIP data to the JSON file, convert numbers, and reformat the file.
+	python - <<EOF
+import sys
+import json
+import urllib2
+with open('$JSONOUTPUTPATH') as handle:
+	data = json.load(handle)
+for name in data:
+	try:
+		data[name] = int(data[name])
+	except ValueError:
+		try:
+			data[name] = float(data[name])
+		except ValueError:
+			pass
+data['wan_ip'] = urllib2.urlopen('http://icanhazip.com').read().strip()
+data['geo_ip'] = json.load(urllib2.urlopen('http://freegeoip.net/json/%s' % data['wan_ip']))
+with open('$JSONOUTPUTPATH', 'w') as handle:
+	json.dump(data, handle, sort_keys=True, indent=4)
+EOF
+	test -n "$SUDO_USER" && chown $SUDO_USER "$JSONOUTPUTPATH"
+	echo "$INFO Saved JSON output to $JSONOUTPUTPATH."
 }
 
 						# Colour codes for terminal.
 BOLD=$(tput bold)
-BLUE=$(tput setf 1)
-GREEN=$(tput setf 2)
-CYAN=$(tput setf 3)
-RED=$(tput setf 4)
+BLUE=$(tput setf 1 || tput setaf 4)
+GREEN=$(tput setf 2 || tput setaf 2)
+CYAN=$(tput setf 3 || tput setaf 6)
+RED=$(tput setf 4 || tput setaf 1)
 RESET=$(tput sgr0)
 
 INFO=" [$BOLD$GREEN*$RESET]"
@@ -453,41 +562,52 @@ VERBOSE=0
 FIREWALL=0
 SERVERNUM=0
 FLAN=0
-UNKNOWNOS=0
+INSTALLCMD=
 MISSINGDEP=0
 CONFIGNUM=0
 RESTARTVPN=0
+BACKGROUNDVPN=0
 
-						# Check if user is root.
-if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
+						# Receives a path when a JSON output file is desired.
+JSONOUTPUTPATH=
+DEFAULTJSONOUTPUTPATH=/tmp/pia.json
 
-						# Check for missing dependencies and install.
 if [ $(command -v pacman) ];then
 	INSTALLCMD="pacman --noconfirm -S"
 elif [ $(command -v apt-get) ];then
 	INSTALLCMD="apt-get install -y"
 elif [ $(command -v yum) ];then
 	INSTALLCMD="yum install -y"
-else
-	UNKNOWNOS=1
 fi
 
-if [ $UNKNOWNOS -gt 0 ];then
-	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
-	command -v ufw >/dev/null 2>&1 || MISSINGDEP=1
-	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
-	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
-	if [ $MISSINGDEP -eq 1 ];then
-		echo "$ERROR OS not identified as arch or debian based, please install openvpn, ufw, curl and unzip and run script again."
-		exit 1
-	fi
-else
-	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";$INSTALLCMD openvpn; }
-	command -v ufw >/dev/null 2>&1 || { echo >&2 "$INFO ufw required, installing...";$INSTALLCMD ufw; }
-	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
-	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
-fi
+while getopts "lhgrupnmkdfvjes:b" opt
+do
+	case $opt in
+		l) flist;exit 0;;
+		h) fhelp;exit 0;;
+		g) fdisplaygeoip;exit 0;;
+		r) fvpnreset;exit 0;;
+		u) fupdate;;
+		p) PORTFORWARD=1;;
+		n) fnewport;;
+		m) MACE=1;DNS=1;;
+		k) KILLS=1;FIREWALL=1;;
+		d) DNS=1;;
+		f) FIREWALL=1;;
+		e) FLAN=1;FIREWALL=1;;
+		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
+		j) JSONOUTPUTPATH="$DEFAULTJSONOUTPUTPATH";;
+		s) SERVERNUM=$OPTARG;;
+		b) BACKGROUNDVPN=1;;
+		*) echo "$ERROR Error: Unrecognized arguments.";fhelp;exit 1;;
+	esac
+done
 
+						# Assume we need to be root from here on.
+fcheckroot
+
+						# Check for missing dependencies and install.
+fcheckdependencies
 
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
@@ -501,28 +621,8 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
 LAN=$(ip route show | grep -i 'default via'| awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
 ufw disable&>/dev/null
-
-while getopts "lhupnmkdfves:" opt
-do
-	case $opt in
-		l) flist;exit 0;;
-		h) fhelp;exit 0;;
-		u) fupdate;;
-		p) PORTFORWARD=1;;
-		n) fnewport;;
-		m) MACE=1;DNS=1;;
-		k) KILLS=1;FIREWALL=1;;
-		d) DNS=1;;
-		f) FIREWALL=1;;
-		e) FLAN=1;FIREWALL=1;;
-		v) VERBOSE=1;curl -s icanhazip.com > /tmp/ip.txt&;;
-		s) SERVERNUM=$OPTARG;;
-		*) echo "$ERROR Error: Unrecognized arguments.";fhelp;exit 1;;
-	esac
-done
 
 if [ ! -f $VPNPATH/servers.txt ];then fupdate;fi
 
@@ -533,8 +633,11 @@ if [ $SERVERNUM -lt 1 ];then
 	clear
 fi
 
-trap fvpnreset INT
+if [ $BACKGROUNDVPN -ne 1 ]; then
+	trap fvpnreset INT
+fi
 
+MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
 if [[ $SERVERNUM =~ ^[0-9]+$ && $SERVERNUM -gt 0 && $SERVERNUM -le $MAXSERVERS ]];then
 	:
 else
@@ -548,3 +651,5 @@ DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print
 CONFIG=$SERVERNAME.ovpn
 
 fconnect
+
+# vim: noet:ts=4:sts=4:sw=4
