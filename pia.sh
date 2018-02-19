@@ -69,10 +69,8 @@ fforward()						# Forward a port.
 	echo -n "$PROMPT Forwarding a port..."
 	sleep 1.5
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	CNT=0
-	while [[ $(echo $FORWARDEDPORT | wc -c) -lt 3 && $CNT -lt 2 ]];do
+	while [ $(echo $FORWARDEDPORT | grep -E '^([1-9]|[1-9]{4}[0-9]{1})$' | wc -c) -lt 3 ];do
 		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
-		((++CNT))
 	done
 }
 
@@ -241,7 +239,7 @@ flist()						# List available servers.
 fchecklog()						# Check openvpn logs to get connection state.
 {
 	LOGRETURN=0
-	while [ $LOGRETURN -eq 0 ]; do
+	while [ $LOGRETURN -eq 0 ];do
 		VCONNECT=$(cat /var/log/pia.log)
 		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1 ];then
 			LOGRETURN=1
@@ -260,8 +258,12 @@ fchecklog()						# Check openvpn logs to get connection state.
 
 fping()						# Get latency to VPN server.
 {
-	PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
-	PINGINT=$(echo $PING | cut -d '.' -f 1)
+	PINGINT=0
+	while [ $PINGINT -lt 1 ];do
+		PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
+		PINGINT=$(echo $PING | cut -d '.' -f 1)
+	done
+	
 	SPEEDCOLOR=$BOLD$GREEN
 	SPEEDNAME="fast"
 	if [ $PINGINT -gt 39 ];then
@@ -284,10 +286,8 @@ fcheckupdate()						# Check if a new config zip is available and download.
 	CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
 	CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
 	CONFIGMODIFIED=''
-	CNT=0
-	while [[ $(echo $CONFIGMODIFIED | wc -c) -lt 6 && $CNT -lt 3 ]];do
+	while [ $(echo $CONFIGMODIFIED | wc -c) -lt 6 ];do
 		CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
-		((++CNT))
 	done
 	if [ $(echo $CONFIGMODIFIED | wc -c) -gt 6 ];then
 		if [ "$CONFIGVERSION" != "$CONFIGMODIFIED" ];then
@@ -307,7 +307,7 @@ fcheckupdate()						# Check if a new config zip is available and download.
 	UPDATEOUTPUT=0
 }
 
-fconnect()
+fconnect()						# Main function
 {
 	if [ $UNLOCK -eq 1 ];then
 		fresetfirewall
@@ -351,7 +351,7 @@ fconnect()
 	if [ $VERBOSE -eq 1 ];then
 		echo "$INFO OpenVPN Logs:"
 		echo -n $CYAN
-		while IFS= read -r LNE ; do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
+		while IFS= read -r LNE ;do echo "     $LNE" | awk '{$1=$2=$3=$4=$5=""; print $0}';done <<< "$PLOG"
 		echo "$RESET$PROMPT OpenVPN Settings:"
 		SETTINGS=$(cat $VPNPATH/$CONFIG)
 		if [ $(echo "$SETTINGS" | grep 'proto udp' | wc -c) -gt 3 ];then
@@ -399,17 +399,17 @@ fconnect()
 			
 			echo -e "\r$PROMPT Old IP:$RED$BOLD $MYIP"
 			if [ $(echo $COUNTRYOLD | wc -c) -gt 8 ];then
-				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
+				while IFS= read -r LNE ;do echo "     $LNE";done <<< "$COUNTRYOLD"
 			fi
 			if [ $(echo $DESCROLD | wc -c) -gt 8 ];then
-				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCROLD"
+				while IFS= read -r LNE ;do echo "     $LNE";done <<< "$DESCROLD"
 			fi
 			echo "$PROMPT Current IP:$GREEN$BOLD $NEWIP"
 			if [ $(echo $COUNTRYNEW | wc -c) -gt 8 ];then
-				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYNEW"
+				while IFS= read -r LNE ;do echo "     $LNE";done <<< "$COUNTRYNEW"
 			fi
 			if [ $(echo $DESCRNEW | wc -c) -gt 8 ];then
-				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$DESCRNEW"
+				while IFS= read -r LNE ;do echo "     $LNE";done <<< "$DESCRNEW"
 			fi
 		else
 			echo -e "\r$ERROR Failed to fetch new IP.                   "
@@ -417,6 +417,13 @@ fconnect()
 	fi
 
 	if [ $PORTFORWARD -eq 1 ];then
+		if [ $NEWPORT -eq 1 ]; then
+			echo -e "\r$INFO Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
+		else
+			if [ $VERBOSE -eq 1 ];then
+				echo -e "\r$PROMPT Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
+			fi
+		fi
 		case $SERVERNAME in
 			"Netherlands") fforward;;
 			"Switzerland") fforward;;
@@ -431,14 +438,6 @@ fconnect()
 			*) NOPORT=1;;
 		esac
 		if [ $NOPORT -eq 0 ];then
-			if [ $NEWPORT -eq 1 ]; then
-				echo -e "\r$INFO Identity changed to $BOLD$GREEN$(cat $VPNPATH/client_id)$RESET"
-			else
-				if [ $VERBOSE -eq 1 ];then
-					echo -e "\r$PROMPT Using port forwarding identity $BOLD$CYAN$(cat $VPNPATH/client_id)$RESET"
-				fi
-			fi
-
 			if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
 				echo -e "\r$INFO Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you.                    "
 			else
@@ -466,7 +465,7 @@ fconnect()
 	if [ $RESTARTVPN -eq 0 ];then
 		echo -e "\r$ERROR$RED$BOLD WARNING:$RESET New OpenVPN log entries detected:                         "
 		NEWLOGS=$(cat /var/log/pia.log | tail -n +$(($LOGLENGTH + 1)) | sed '/^$/d')
-		while IFS= read -r LNE ; do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
+		while IFS= read -r LNE ;do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
 		RESTARTVPN=1
 		if [ $FIREWALL -eq 1 ];then
 			flockdown
@@ -478,7 +477,7 @@ fconnect()
 	fvpnreset
 }
 
-flogwatcher()
+flogwatcher()						# Check the log for new entries
 {
 	LOGLENGTH=$(cat /var/log/pia.log | wc -l)
 	LOGALERT=$LOGLENGTH
@@ -493,7 +492,7 @@ flogwatcher()
 	
 }
 
-fgetip()
+fgetip()						# Get external IP
 {
 	while [ $(echo $MYIP | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | wc -c) -lt 3 ];do
 		MYIP=$(curl -m 5 -s icanhazip.com)
