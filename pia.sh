@@ -191,13 +191,13 @@ fvpnreset()						# Restore all settings and exit openvpn gracefully.
 
 fdnschange()						# Change DNS servers to PIA.
 {
-	echo "$INFO Changed DNS to PIA servers."
 	cp /etc/resolv.conf /etc/resolv.conf.bak
 	echo '''#PIA DNS Servers
 nameserver 209.222.18.222
 nameserver 209.222.18.218
 ''' > /etc/resolv.conf.pia
 	cp /etc/resolv.conf.pia /etc/resolv.conf
+	echo "$INFO Changed DNS to PIA servers."
 }
 
 fmace()						# Enable PIA MACE DNS based ad blocking.
@@ -208,8 +208,8 @@ fmace()						# Enable PIA MACE DNS based ad blocking.
 
 fdnsrestore()						# Revert to original DNS servers.
 {
-	echo "$INFO Restored DNS servers."
 	cp /etc/resolv.conf.bak /etc/resolv.conf
+	echo "$INFO Restored DNS servers."
 }
 
 flist()						# List available servers.
@@ -295,13 +295,16 @@ fcheckupdate()						# Check if a new config zip is available and download.
 			echo "$ERROR WARNING: OpenVPN configuration is out of date!"
 			echo "$PROMPT New PIA OpenVPN config file available! Updating..."
 		else
-			if [ $VERBOSE -eq 1 ];then
+			if [[ $VERBOSE -eq 1 && UPDATEOUTPUT -eq 1 ]];then
 				echo "$INFO OpenVPN configuration up to date: $CONFIGMODIFIED"
 			fi
 		fi
 	else
-		echo "$ERROR Failed to check OpenVPN config Last-Modified date!"
+		if [ $UPDATEOUTPUT -eq 1 ];then
+			echo "$ERROR Failed to check OpenVPN config Last-Modified date!"
+		fi
 	fi
+	UPDATEOUTPUT=0
 }
 
 fconnect()
@@ -335,6 +338,7 @@ fconnect()
 		5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
 	esac
 
+	UPDATEOUTPUT=1
 	fcheckupdate
 	if [ $RESTARTVPN -eq 1 ];then
 		fupdate
@@ -375,25 +379,25 @@ fconnect()
 			echo "$INFO$BOLD$GREEN SHA256$RESET Authentication."
 		fi
 
-		NEWIP=''
-		CURRIP=$(cat /tmp/ip.txt)
 		echo  -n "$PROMPT Fetching IP..."
-		sleep 1.5
-		CNT=0
-		while [[ $(echo $NEWIP | wc -c) -lt 2 && $CNT -lt 2 ]];do
+		while [ $(echo $NEWIP | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | wc -c) -lt 3 ];do
 			NEWIP=$(curl -s -m 4 icanhazip.com)
-			((++CNT))
 		done
 
+		while [ $(echo $MYIP | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | wc -c) -lt 3 ];do
+			MYIP=$(cat /tmp/ip.txt)
+			sleep 0.3
+		done
+		
 		if [ $(echo $NEWIP | wc -c) -gt 2 ];then
-			WHOISOLD="$(whois $CURRIP)"
+			WHOISOLD="$(whois $MYIP)"
 			WHOISNEW="$(whois $NEWIP)"
 			COUNTRYOLD=$(echo "$WHOISOLD" | grep country | head -n 1)
 			COUNTRYNEW=$(echo "$WHOISNEW" | grep country | head -n 1)
 			DESCROLD="$(echo "$WHOISOLD" | grep descr)"$RESET
 			DESCRNEW="$(echo "$WHOISNEW" | grep descr)"$RESET
 			
-			echo -e "\r$PROMPT Old IP:$RED$BOLD $CURRIP"
+			echo -e "\r$PROMPT Old IP:$RED$BOLD $MYIP"
 			if [ $(echo $COUNTRYOLD | wc -c) -gt 8 ];then
 				while IFS= read -r LNE ; do echo "     $LNE";done <<< "$COUNTRYOLD"
 			fi
@@ -459,14 +463,18 @@ fconnect()
 
 	echo -n "$INFO VPN setup complete, press$BOLD$RED Ctrl+C$RESET to shut down."
 	flogwatcher
-	echo -e "\r$ERROR$RED$BOLD WARNING:$RESET New OpenVPN log entries detected:                         "
-	NEWLOGS=$(cat /var/log/pia.log | tail -n +$(($LOGLENGTH + 1)) | sed '/^$/d')
-	while IFS= read -r LNE ; do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
-	RESTARTVPN=1
-	if [ $FIREWALL -eq 1 ];then
-		flockdown
-		UNLOCK=1
-	fi
+	if [ $RESTARTVPN -eq 0 ];then
+		echo -e "\r$ERROR$RED$BOLD WARNING:$RESET New OpenVPN log entries detected:                         "
+		NEWLOGS=$(cat /var/log/pia.log | tail -n +$(($LOGLENGTH + 1)) | sed '/^$/d')
+		while IFS= read -r LNE ; do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
+		RESTARTVPN=1
+		if [ $FIREWALL -eq 1 ];then
+			flockdown
+			UNLOCK=1
+		fi
+	else
+		fupdate
+	fi	
 	fvpnreset
 }
 
@@ -475,9 +483,22 @@ flogwatcher()
 	LOGLENGTH=$(cat /var/log/pia.log | wc -l)
 	LOGALERT=$LOGLENGTH
 	while [ $LOGALERT -eq $LOGLENGTH ];do
-		sleep 15
+		sleep 20
 		LOGALERT=$(cat /var/log/pia.log | wc -l)
+		fcheckupdate
+		if [ $RESTARTVPN -eq 1 ];then
+			return 0
+		fi
 	done
+	
+}
+
+fgetip()
+{
+	while [ $(echo $MYIP | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | wc -c) -lt 3 ];do
+		MYIP=$(curl -m 5 -s icanhazip.com)
+	done
+	echo $MYIP > /tmp/ip.txt
 }
 
 						# Colour codes for terminal.
@@ -498,6 +519,7 @@ VPNPATH='/etc/openvpn/pia'
 						# Initialize switches.
 PORTFORWARD=0
 NEWPORT=0
+NEWIP=0
 NOPORT=0
 MACE=0
 KILLS=0
@@ -512,6 +534,7 @@ MISSINGDEP=0
 CONFIGNUM=0
 RESTARTVPN=0
 UNLOCK=0
+UPDATEOUTPUT=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
@@ -569,7 +592,7 @@ do
 		d) DNS=1;;
 		f) FIREWALL=1;;
 		e) FLAN=1;FIREWALL=1;;
-		v) VERBOSE=1;curl -m 5 -s icanhazip.com > /tmp/ip.txt&;;
+		v) VERBOSE=1;fgetip&;;
 		s) SERVERNUM=$OPTARG;;
 		*) echo "$ERROR Error: Unrecognized arguments.";fhelp;exit 1;;
 	esac
