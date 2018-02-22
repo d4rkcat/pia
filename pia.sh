@@ -152,7 +152,7 @@ fhelp()						# Help function.
 	-e	- Allow LAN through firewall.
 	-m	- Enable PIA MACE ad blocking.
 	-k	- Enable internet killswitch.
-	-x  - Encrypt the credetials file.
+	-x	- Encrypt the credetials file.
 	-v	- Display verbose information.
 	-h	- Display this help.
 
