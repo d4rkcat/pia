@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## pia v0.4 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
+## pia v0.5 Copyright (C) 2017 d4rkcat (thed4rkcat@yandex.com)
 #
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License Version 2 as published by
@@ -69,7 +69,7 @@ fforward()						# Forward a port.
 	echo -n "$PROMPT Forwarding a port..."
 	sleep 1.5
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	while [ $(echo $FORWARDEDPORT | grep -E '^([1-9]|[1-9]{4}[0-9]{1})$' | wc -c) -lt 3 ];do
+	while [[ $(echo $FORWARDEDPORT | grep -E '^([1-9]|[1-9]{4}[0-9]{1})$' | wc -c) -lt 3 ]];do
 		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 	done
 }
@@ -152,10 +152,11 @@ fhelp()						# Help function.
 	-e	- Allow LAN through firewall.
 	-m	- Enable PIA MACE ad blocking.
 	-k	- Enable internet killswitch.
+	-x  - Encrypt the credetials file.
 	-v	- Display verbose information.
 	-h	- Display this help.
 
-Examples: 
+	Examples: 
 	pia -dps 6  	- Change DNS, forward a port and connect to CA_Montreal.
 	pia -nfv	- Forward a new port, run firewall and be verbose.
 """
@@ -163,6 +164,7 @@ Examples:
 
 fvpnreset()						# Restore all settings and exit openvpn gracefully.
 {
+	echo
 	if [ $DNS -eq 1 ];then
 		fdnsrestore
 	fi
@@ -241,9 +243,7 @@ fchecklog()						# Check openvpn logs to get connection state.
 	LOGRETURN=0
 	while [ $LOGRETURN -eq 0 ];do
 		VCONNECT=$(cat /var/log/pia.log)
-		if [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1 ];then
-			LOGRETURN=1
-		elif [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1 ];then
+		if [ $(echo "$VCONNECT" | grep 'auth-failure' | wc -c) -gt 1 ];then
 			LOGRETURN=2
 		elif [ $(echo "$VCONNECT" | grep 'RESOLVE: Cannot resolve host address' | wc -c) -gt 1 ];then
 			LOGRETURN=3
@@ -251,6 +251,10 @@ fchecklog()						# Check openvpn logs to get connection state.
 			LOGRETURN=4
 		elif [ $(echo "$VCONNECT" | grep 'Exiting due to fatal error' | wc -c) -gt 1 ];then
 			LOGRETURN=5
+		elif [ $(echo "$VCONNECT" | grep 'ERROR: Linux route add command failed:' | wc -c) -gt 1 ];then
+			LOGRETURN=6
+		elif [ $(echo "$VCONNECT" | grep 'Initialization Sequence Completed' | wc -c) -gt 1 ];then
+			LOGRETURN=1
 		fi
 		sleep 0.2
 	done
@@ -259,7 +263,7 @@ fchecklog()						# Check openvpn logs to get connection state.
 fping()						# Get latency to VPN server.
 {
 	PINGINT=0
-	while [ $PINGINT -lt 1 ];do
+	while [ $(echo $PINGINT | grep -E ^\-?[0-9]+$ | wc -c) -lt 2 ];do
 		PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
 		PINGINT=$(echo $PING | cut -d '.' -f 1)
 	done
@@ -320,8 +324,8 @@ fconnect()						# Main function
 		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                       "
 	fi
 
-	if [[ $KILLS -eq 1 && $VERBOSE -eq 1 ]];then
-		echo "$PROMPT Killswitch activated."
+	if [ -f $VPNPATH/pass.enc ];then
+		fdecryptcreds
 	fi
 
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
@@ -332,12 +336,16 @@ fconnect()						# Main function
 
 	case $LOGRETURN in
 		1) echo -e "\r$INFO$BOLD$GREEN Connected$RESET, OpenVPN is running daemonized on PID $BOLD$CYAN$VPNPID$RESET                    ";;
-		2) echo -e "\r$ERROR Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;exit 1;;
+		2) echo -e "\r$ERROR Authorization Failed. Please rerun script to enter correct login details.                    ";rm $VPNPATH/pass.txt;kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
 		3) echo -e "\r$ERROR OpenVPN failed to resolve $DOMAIN.                    ";kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
-		4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;exit 1;;
-		5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;exit 1;;
+		4) echo -e "\r$ERROR OpenVPN exited unexpectedly. Please review log:                    ";cat /var/log/pia.log;kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
+		5) echo -e "\r$ERROR OpenVPN suffered a fatal error. Please review log:                    ";cat /var/log/pia.log;kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
+		6) echo -e "\r$ERROR OpenVPN failed to add routes. Please review log:                    ";cat /var/log/pia.log;kill -s SIGINT $VPNPID&>/dev/null;exit 1;;
 	esac
 
+	if [ $ENCRYPT -eq 1 ];then
+		fencryptcreds
+	fi
 	UPDATEOUTPUT=1
 	fcheckupdate
 	if [ $RESTARTVPN -eq 1 ];then
@@ -459,6 +467,10 @@ fconnect()						# Main function
 	if [ $FIREWALL -eq 1 ];then
 		ffirewall
 	fi
+	if [[ $KILLS -eq 1 && $VERBOSE -eq 1 ]];then
+		echo "$PROMPT Killswitch activated."
+	fi
+
 
 	echo -n "$INFO VPN setup complete, press$BOLD$RED Ctrl+C$RESET to shut down."
 	flogwatcher
@@ -500,6 +512,23 @@ fgetip()						# Get external IP
 	echo $MYIP > /tmp/ip.txt
 }
 
+fdecryptcreds()
+{
+	if [ $(cat $VPNPATH/pass.enc | wc -c) -gt 3 ];then
+		echo "$PROMPT Decrypting creds.."
+		cat $VPNPATH/pass.enc | openssl base64 -d | openssl enc -d -aes-256-cbc > $VPNPATH/pass.txt && rm $VPNPATH/pass.enc && chmod 400 $VPNPATH/pass.txt
+	else
+		rm $VPNPATH/pass.enc
+	fi
+}
+
+fencryptcreds()
+{
+	echo "$INFO Encypting creds.."
+	cat $VPNPATH/pass.txt | openssl enc -e -aes-256-cbc -a > $VPNPATH/pass.enc && rm $VPNPATH/pass.txt && chmod 400 $VPNPATH/pass.enc
+}
+
+
 						# Colour codes for terminal.
 BOLD=$(tput bold)
 BLUE=$(tput setf 1)
@@ -534,6 +563,7 @@ CONFIGNUM=0
 RESTARTVPN=0
 UNLOCK=0
 UPDATEOUTPUT=0
+ENCRYPT=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
@@ -551,15 +581,17 @@ fi
 
 if [ $UNKNOWNOS -eq 1 ];then
 	command -v openvpn >/dev/null 2>&1 || MISSINGDEP=1
+	command -v openssl >/dev/null 2>&1 || MISSINGDEP=1
 	command -v iptables >/dev/null 2>&1 || MISSINGDEP=1
 	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
 	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
 	if [ $MISSINGDEP -eq 1 ];then
-		echo "$ERROR OS not identified as arch or debian based, please install openvpn, iptables, curl and unzip and run script again."
+		echo "$ERROR OS not identified as arch or debian based, please install openvpn, openssl, iptables, curl and unzip and run script again."
 		exit 1
 	fi
 else
 	command -v openvpn >/dev/null 2>&1 || { echo >&2 "$INFO openvpn required, installing...";$INSTALLCMD openvpn; }
+	command -v openssl >/dev/null 2>&1 || { echo >&2 "$INFO openssl required, installing...";$INSTALLCMD openssl; }
 	command -v iptables >/dev/null 2>&1 || { echo >&2 "$INFO iptables required, installing...";$INSTALLCMD iptables; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
 	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
@@ -569,7 +601,7 @@ fi
 if [ ! -d $VPNPATH ];then mkdir -p $VPNPATH;fi
 
 						# Check for existence of credentials file.
-if [ ! -f $VPNPATH/pass.txt ];then
+if [[ ! -f $VPNPATH/pass.txt && ! -f $VPNPATH/pass.enc ]];then
 	read -p "$PROMPT Please enter your username: " USERNAME
 	read -sp "$PROMPT Please enter your password: " PASSWORD
 	echo -e "$USERNAME\n$PASSWORD" > $VPNPATH/pass.txt
@@ -578,7 +610,7 @@ if [ ! -f $VPNPATH/pass.txt ];then
 	unset USERNAME PASSWORD
 fi
 
-while getopts "lhupnmkdfves:" opt
+while getopts "lhupnmkdfvxes:" opt
 do
 	case $opt in
 		l) flist;exit 0;;
@@ -592,6 +624,7 @@ do
 		f) FIREWALL=1;;
 		e) FLAN=1;FIREWALL=1;;
 		v) VERBOSE=1;fgetip&;;
+		x) ENCRYPT=1;;
 		s) SERVERNUM=$OPTARG;;
 		*) echo "$ERROR Error: Unrecognized arguments.";fhelp;exit 1;;
 	esac
