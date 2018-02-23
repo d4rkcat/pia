@@ -69,7 +69,7 @@ fforward()						# Forward a port.
 	echo -n "$PROMPT Forwarding a port..."
 	sleep 1.5
 	if [ ! -f $VPNPATH/client_id ];then head -n 100 /dev/urandom | sha256sum | tr -d " -" > $VPNPATH/client_id;fi
-	while [[ $(echo $FORWARDEDPORT | grep -E '^([1-9]|[1-9]{4}[0-9]{1})$' | wc -c) -lt 3 ]];do
+	while [ $(echo $FORWARDEDPORT | wc -c) -lt 3 ];do
 		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 	done
 }
@@ -263,7 +263,7 @@ fchecklog()						# Check openvpn logs to get connection state.
 fping()						# Get latency to VPN server.
 {
 	PINGINT=0
-	while [ $(echo $PINGINT | grep -E ^\-?[0-9]+$ | wc -c) -lt 2 ];do
+	while [ $PINGINT -lt 1 ];do
 		PING=$(ping -c 3 $1 | grep rtt | cut -d '/' -f 4 | awk '{print $3}')
 		PINGINT=$(echo $PING | cut -d '.' -f 1)
 	done
@@ -324,8 +324,12 @@ fconnect()						# Main function
 		echo -e "\r$INFO $SERVERNAME latency: $SPEEDCOLOR$PING ms ($SPEEDNAME)$RESET                       "
 	fi
 
-	if [ -f $VPNPATH/pass.enc ];then
+	if [[ -f $VPNPATH/pass.enc && $(echo $CREDS | wc -c) -lt 3 ]];then
 		fdecryptcreds
+	fi
+
+	if [ $(echo $CREDS | wc -c) -gt 3 ];then
+		echo "$CREDS" > $VPNPATH/pass.txt
 	fi
 
 	echo -n "$PROMPT Connecting to $BOLD$GREEN$SERVERNAME$RESET, Please wait..."
@@ -344,8 +348,10 @@ fconnect()						# Main function
 	esac
 
 	if [ $ENCRYPT -eq 1 ];then
+		CREDS="$(cat $VPNPATH/pass.txt 2>/dev/null)"
 		fencryptcreds
 	fi
+
 	UPDATEOUTPUT=1
 	fcheckupdate
 	if [ $RESTARTVPN -eq 1 ];then
@@ -514,18 +520,24 @@ fgetip()						# Get external IP
 
 fdecryptcreds()
 {
-	if [ $(cat $VPNPATH/pass.enc | wc -c) -gt 3 ];then
-		echo "$PROMPT Decrypting creds.."
-		cat $VPNPATH/pass.enc | openssl base64 -d | openssl enc -d -aes-256-cbc > $VPNPATH/pass.txt && rm $VPNPATH/pass.enc && chmod 400 $VPNPATH/pass.txt
-	else
-		rm $VPNPATH/pass.enc
+	if [ $(cat $VPNPATH/pass.txt 2>/dev/null | wc -c) -lt 6 ];then	
+		if [ $(cat $VPNPATH/pass.enc | wc -c) -gt 3 ];then
+			echo "$PROMPT Decrypting creds.."
+			cat $VPNPATH/pass.enc | openssl base64 -d | openssl enc -d -aes-256-cbc > $VPNPATH/pass.txt
+			chmod 400 $VPNPATH/pass.txt && CREDS="$(cat $VPNPATH/pass.txt 2>/dev/null)" 
+			if [ $ENCRYPT -eq 0 ];then
+				rm $VPNPATH/pass.enc
+			fi
+		else
+			rm $VPNPATH/pass.enc
+		fi
 	fi
 }
 
 fencryptcreds()
 {
 	echo "$INFO Encypting creds.."
-	cat $VPNPATH/pass.txt | openssl enc -e -aes-256-cbc -a > $VPNPATH/pass.enc && rm $VPNPATH/pass.txt && chmod 400 $VPNPATH/pass.enc
+	cat $VPNPATH/pass.txt 2>/dev/null | openssl enc -e -aes-256-cbc -a > $VPNPATH/pass.enc && rm $VPNPATH/pass.txt && chmod 400 $VPNPATH/pass.enc
 }
 
 
@@ -564,6 +576,7 @@ RESTARTVPN=0
 UNLOCK=0
 UPDATEOUTPUT=0
 ENCRYPT=0
+CREDS=0
 
 						# Check if user is root.
 if [ $(id -u) != 0 ];then echo "$ERROR Script must be run as root." && exit 1;fi
