@@ -223,7 +223,8 @@ flist()						# List available servers.
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
 		SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $i | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
-			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Czech_Republic") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Spain") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Toronto") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Montreal") echo $BOLD$GREEN$SERVERNAME$RESET;;
@@ -439,7 +440,8 @@ fconnect()						# Main function
 			fi
 		fi
 		case $SERVERNAME in
-			"Netherlands") fforward;;
+			"Czech_Republic") fforward;;
+			"Spain") fforward;;
 			"Switzerland") fforward;;
 			"CA_Toronto") fforward;;
 			"CA_Montreal") fforward;;
@@ -458,7 +460,7 @@ fconnect()						# Main function
 				echo -e "\r$ERROR $SERVERNAME failed to forward us a port!                   "
 			fi
 		else
-			echo "$ERROR Port forwarding is only available at: Netherlands, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
+			echo "$ERROR Port forwarding is only available at: Spain, Czech_Republic, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
 		fi
 	fi
 
