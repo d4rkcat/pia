@@ -223,17 +223,17 @@ flist()						# List available servers.
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
 		SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $i | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
-			"Czech_Republic") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Spain") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Toronto") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Montreal") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"CA_Vancouver") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Romania") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Israel") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Czech_Republic") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Spain") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Sweden") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"France") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Germany") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Romania") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Israel") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			*) echo $SERVERNAME;;
 		esac
 	done
@@ -440,17 +440,17 @@ fconnect()						# Main function
 			fi
 		fi
 		case $SERVERNAME in
+			"CA_Toronto") fforward;;
+			"CA_Montreal") fforward;;
+			"CA_Vancouver") fforward;;
 			"Czech_Republic") fforward;;
 			"Spain") fforward;;
 			"Switzerland") fforward;;
-			"CA_Toronto") fforward;;
-			"CA_Montreal") fforward;;
-			"Romania") fforward;;
-			"Israel") fforward;;
 			"Sweden") fforward;;
 			"France") fforward;;
 			"Germany") fforward;;
-			"CA_Vancouver") fforward;;
+			"Romania") fforward;;
+			"Israel") fforward;;
 			*) NOPORT=1;;
 		esac
 		if [ $NOPORT -eq 0 ];then
@@ -460,7 +460,7 @@ fconnect()						# Main function
 				echo -e "\r$ERROR $SERVERNAME failed to forward us a port!                   "
 			fi
 		else
-			echo "$ERROR Port forwarding is only available at: Spain, Czech_Republic, Switzerland, CA_Toronto, CA_Montreal, CA_Vancouver, Romania, Israel, Sweden, France and Germany."
+			echo "$ERROR Port forwarding is only available at: CA_Toronto, CA_Montreal, CA_Vancouver, Czech_Republic, Spain, Switzerland, Sweden, France, Germany, Romania, and Israel."
 		fi
 	fi
 
