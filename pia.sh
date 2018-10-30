@@ -45,22 +45,36 @@ fupdate()						# Update the PIA openvpn files.
 
 	echo -n "$PROMPT Updating PIA openvpn files..."
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers.txt $VPNPATH/*.crt $VPNPATH/*.pem
+        find $VPNPATH -type f ! -name '*.*' -exec rm {} \;
 	curl -so $VPNPATH/pia.zip $DOWNURL
 	echo "$CONFIGNUM $DOWNURL $(curl -sI $DOWNURL | grep Last-Modified | cut -d ' ' -f 2-)" > $VPNPATH/configversion.txt
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
-	cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
+	#cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
+        for CONFIGFILE in $VPNPATH/*; do mv "$CONFIGFILE" "${CONFIGFILE// /_}" 2>/dev/null; done
 	OLDS=("auth-user-pass" "crl-verify crl.rsa.2048.pem" "crl-verify crl.rsa.4096.pem" "ca ca.rsa.2048.crt" "ca ca.rsa.4096.crt" "verb 1")
 	NEWS=("auth-user-pass $VPNPATH/pass.txt" "crl-verify $VPNPATH/crl.rsa.2048.pem" "crl-verify $VPNPATH/crl.rsa.4096.pem" "ca $VPNPATH/ca.rsa.2048.crt" "ca $VPNPATH/ca.rsa.4096.crt" "verb 2")
-	for CONFIGFILE in $VPNPATH/*.ovpn;do
+#        find /etc/openvpn/pia -type f ! -name "*.*" -exec mv {} {}.ovpn \;
+#	for CONFIGFILE in $VPNPATH/*.ovpn;do
+#		CNT=0
+#		for OLD in "${OLDS[@]}";do 
+#			sed -i "s%$OLD%${NEWS[$CNT]}%g" $CONFIGFILE
+#			((++CNT))
+#		done
+#		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
+#		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
+#		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
+#	done
+#	find $VPNPATH -type f ! -name '*.*' -exec sh -c '
+        for CONFIGFILE in `find $VPNPATH -type f ! -name '*.*'| sort`; do
 		CNT=0
-		for OLD in "${OLDS[@]}";do 
-			sed -i "s%$OLD%${NEWS[$CNT]}%g" $CONFIGFILE
-			((++CNT))
+                for OLD in "${OLDS[@]}";do
+                        sed -i "s%$OLD%${NEWS[$CNT]}%g" $CONFIGFILE
+                        ((++CNT))
+                done
+                echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
+                echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
+                cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
 		done
-		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
-		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
-		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
-	done
 	echo -e "\r$INFO Files Updated.                     "
 }
 
@@ -72,6 +86,7 @@ fforward()						# Forward a port.
 	while [ $(echo $FORWARDEDPORT | wc -c) -lt 3 ];do
 		FORWARDEDPORT=$(curl -s -m 4 "http://209.222.18.222:2000/?client_id=$(cat $VPNPATH/client_id)" | cut -d ':' -f 2 | cut -d '}' -f 1)
 	done
+        echo $FORWARDEDPORT > /etc/openvpn/pia/portnum
 }
 
 fnewport()						# Change port forwarded.
@@ -665,7 +680,8 @@ fi
 
 SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
 DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
-CONFIG=$SERVERNAME.ovpn
+#CONFIG=$SERVERNAME.ovpn
+CONFIG=$SERVERNAME
 
 if [ -f $VPNPATH/.killswitch ];then
 	UNLOCK=1
