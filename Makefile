@@ -1,3 +1,11 @@
+BIN=/usr/local/bin
+ETC=/etc/openvpn/pia
+
 install:
-	cp pia.sh /usr/bin/pia
-	chmod +x /usr/bin/pia
+	install -m 755 pia.sh ${BIN}/pia
+
+uninstall:
+	rm -f ${BIN}/pia
+
+purge: uninstall
+	rm -fr ${ETC}
