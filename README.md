@@ -41,7 +41,7 @@ Dependencies:
 Installation:
 ==========
 Clone the repository to a suitable place:  
-`cd ~/scripts && git clone https://github.com/d4rkcat/pia`
+`cd ~/scripts && git clone https://github.com/taigasan/pia`
 
 Then to install the script:  
 `cd ~/scripts/pia && sudo make install`
