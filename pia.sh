@@ -43,9 +43,22 @@ fupdate()						# Update the PIA openvpn files.
 		exit 1
 	fi
 
-	echo -n "$PROMPT Updating PIA openvpn files..."
+	printf "$PROMPT Updating PIA openvpn files...\n"
+	# Download archive to temporary directory
+	TMPDIR=$(mktemp -d)
+	curl -s -S -o $TMPDIR/pia.zip $DOWNURL
+	# Stop updating if file download failed
+	if [[ $? != 0 ]]; then
+		printf "$ERROR Unable to download archive from $DOWNURL.\n"
+		rm -r $TMPDIR
+		return 1
+	fi
+
+	# remove and replace old configuration files
 	rm -rf $VPNPATH/*.ovpn $VPNPATH/servers.txt $VPNPATH/*.crt $VPNPATH/*.pem
-	curl -so $VPNPATH/pia.zip $DOWNURL
+	mv $TMPDIR/pia.zip $VPNPATH/pia.zip
+	rmdir $TMPDIR
+
 	echo "$CONFIGNUM $DOWNURL $(curl -sI $DOWNURL | grep Last-Modified | cut -d ' ' -f 2-)" > $VPNPATH/configversion.txt
 	cd $VPNPATH && unzip -q pia.zip && rm pia.zip
 	cd $VPNPATH && for CONFIGFILE in *.ovpn;do mv "$CONFIGFILE" $(echo $CONFIGFILE | tr ' ' '_') &>/dev/null;done
