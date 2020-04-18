@@ -36,6 +36,7 @@ Dependencies:
 - openssl
 - curl
 - unzip
+- whois
 - git
 
 Installation:
