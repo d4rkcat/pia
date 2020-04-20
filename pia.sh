@@ -223,16 +223,18 @@ flist()						# List available servers.
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
 		SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $i | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
-			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"CA_Toronto") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"CA_Montreal") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"CA_Vancouver") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Romania") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Israel") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Sweden") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"France") echo $BOLD$GREEN$SERVERNAME$RESET;;
-			"Germany") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Montreal")    echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Toronto")     echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"CA_Vancouver")   echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Czech_Republic") echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"DE_Berlin")      echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"DE_Frankfurt")   echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"France")         echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Israel")         echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Romania")        echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Spain")          echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Sweden")         echo $BOLD$GREEN$SERVERNAME$RESET;;
+			"Switzerland")    echo $BOLD$GREEN$SERVERNAME$RESET;;
 			*) echo $SERVERNAME;;
 		esac
 	done
@@ -439,18 +441,21 @@ fconnect()						# Main function
 			fi
 		fi
 		case $SERVERNAME in
-			"Netherlands") fforward;;
-			"Switzerland") fforward;;
-			"CA_Toronto") fforward;;
-			"CA_Montreal") fforward;;
-			"Romania") fforward;;
-			"Israel") fforward;;
-			"Sweden") fforward;;
-			"France") fforward;;
-			"Germany") fforward;;
-			"CA_Vancouver") fforward;;
+			"CA_Montreal")    fforward;;
+			"CA_Toronto")     fforward;;
+			"CA_Vancouver")	  fforward;;
+			"Czech_Republic") fforward;;
+			"DE_Berlin")      fforward;;
+			"DE_Frankfurt")   fforward;;
+			"France")         fforward;;
+			"Israel")         fforward;;
+			"Romania")        fforward;;
+			"Spain")          fforward;;
+			"Sweden")         fforward;;
+			"Switzerland")    fforward;;
 			*) NOPORT=1;;
 		esac
+
 		if [ $NOPORT -eq 0 ];then
 			if [ $FORWARDEDPORT -gt 0 ] &>/dev/null;then
 				echo -e "\r$INFO Port $GREEN$BOLD$FORWARDEDPORT$RESET has been forwarded to you.                    "
@@ -598,8 +603,9 @@ if [ $UNKNOWNOS -eq 1 ];then
 	command -v iptables >/dev/null 2>&1 || MISSINGDEP=1
 	command -v curl >/dev/null 2>&1 || MISSINGDEP=1
 	command -v unzip >/dev/null 2>&1 || MISSINGDEP=1
+	command -v whois >/dev/null 2>&1 || MISSINGDEP=1
 	if [ $MISSINGDEP -eq 1 ];then
-		echo "$ERROR OS not identified as arch or debian based, please install openvpn, openssl, iptables, curl and unzip and run script again."
+		echo "$ERROR OS not identified as arch or debian based, please install openvpn, openssl, iptables, curl, whois and unzip and run script again."
 		exit 1
 	fi
 else
@@ -608,6 +614,7 @@ else
 	command -v iptables >/dev/null 2>&1 || { echo >&2 "$INFO iptables required, installing...";$INSTALLCMD iptables; }
 	command -v curl >/dev/null 2>&1 || { echo >&2 "$INFO curl required, installing...";$INSTALLCMD curl; }
 	command -v unzip >/dev/null 2>&1 || { echo >&2 "$INFO unzip required, installing...";$INSTALLCMD unzip; }
+	command -v whois >/dev/null 2>&1 || { echo >&2 "$INFO whois required, installing...";$INSTALLCMD whois; }
 fi
 
 
