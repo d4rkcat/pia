@@ -59,7 +59,7 @@ fupdate()						# Update the PIA openvpn files.
 		done
 		echo -e "auth-nocache\nlog /var/log/pia.log" >> $CONFIGFILE
 		echo -n $(basename $CONFIGFILE | cut -d '.' -f 1)" " >> $VPNPATH/servers.txt
-		cat $CONFIGFILE | grep .com | awk '{print $2}' >> $VPNPATH/servers.txt
+		grep .com $CONFIGFILE | awk '{print $2}' >> $VPNPATH/servers.txt
 	done
 	echo -e "\r$INFO Files Updated.                     "
 }
@@ -88,8 +88,8 @@ ffirewall()						# Set up iptables firewall rules to only allow traffic on tunne
 	LAN=$(ip route show | grep default | awk '{print $3 }' | cut -d '.' -f 1-3)".0/24"
 	DEFAULTDEVICE=$(ip route show | grep default | awk '{print $5}')
 	VPNDEVICE=$(echo "$PLOG" | grep 'TUN/TAP device' | awk '{print $8}')
-	VPNPORT=$(cat $VPNPATH/$CONFIG | grep 'remote ' | awk '{print $3}')
-	PROTO=$(cat $VPNPATH/$CONFIG | grep proto | awk '{print $2}')
+	VPNPORT=$(grep 'remote ' $VPNPATH/$CONFIG | awk '{print $3}')
+	PROTO=$(grep proto $VPNPATH/$CONFIG | awk '{print $2}')
 
 	iptables -P OUTPUT DROP																# default policy for outgoing packets
 	iptables -P INPUT DROP																# default policy for incoming packets
@@ -219,9 +219,9 @@ flist()						# List available servers.
 	fi
 	
 	echo "$INFO$BOLD$GREEN Green$RESET servers allow port forwarding."
-	for i in $(seq $(cat $VPNPATH/servers.txt | wc -l));do
+	for i in $(seq $(wc -l $VPNPATH/servers.txt | cut -d' ' -f1));do
 		echo -n " $BOLD$RED[$RESET$i$BOLD$RED]$RESET "
-		SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $i | tail -n 1 | awk '{print $1}')
+		SERVERNAME=$(head -n $i $VPNPATH/servers.txt | tail -n 1 | awk '{print $1}')
 		case $SERVERNAME in
 			"Netherlands") echo $BOLD$GREEN$SERVERNAME$RESET;;
 			"Switzerland") echo $BOLD$GREEN$SERVERNAME$RESET;;
@@ -286,9 +286,9 @@ fping()						# Get latency to VPN server.
 
 fcheckupdate()						# Check if a new config zip is available and download.
 {
-	CONFIGNUM=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 1)
-	CONFIGURL=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 2)
-	CONFIGVERSION=$(cat $VPNPATH/configversion.txt | cut -d ' ' -f 3-)
+	CONFIGNUM=$(cut -d ' ' -f 1 $VPNPATH/configversion.txt)
+	CONFIGURL=$(cut -d ' ' -f 2 $VPNPATH/configversion.txt)
+	CONFIGVERSION=$(cut -d ' ' -f 3- $VPNPATH/configversion.txt)
 	CONFIGMODIFIED=''
 	while [ $(echo $CONFIGMODIFIED | wc -c) -lt 6 ];do
 		CONFIGMODIFIED=$(curl -sI $CONFIGURL | grep Last-Modified | cut -d ' ' -f 2-)
@@ -482,7 +482,7 @@ fconnect()						# Main function
 	flogwatcher
 	if [ $RESTARTVPN -eq 0 ];then
 		echo -e "\r$ERROR$RED$BOLD WARNING:$RESET New OpenVPN log entries detected:                         "
-		NEWLOGS=$(cat /var/log/pia.log | tail -n +$(($LOGLENGTH + 1)) | sed '/^$/d')
+		NEWLOGS=$(tail -n +$(($LOGLENGTH + 1)) /var/log/pia.log | sed '/^$/d')
 		while IFS= read -r LNE ;do echo "$BOLD$RED     $LNE$RESET";done <<< "$NEWLOGS"
 		RESTARTVPN=1
 		if [ $FIREWALL -eq 1 ];then
@@ -497,11 +497,11 @@ fconnect()						# Main function
 
 flogwatcher()						# Check the log for new entries
 {
-	LOGLENGTH=$(cat /var/log/pia.log | wc -l)
+	LOGLENGTH=$(wc -l /var/log/pia.log | cut -d' ' -f1)
 	LOGALERT=$LOGLENGTH
 	while [ $LOGALERT -eq $LOGLENGTH ];do
 		sleep 20
-		LOGALERT=$(cat /var/log/pia.log | wc -l)
+		LOGALERT=$(wc -l /var/log/pia.log | cut -d' ' -f1)
 		fcheckupdate
 		if [ $RESTARTVPN -eq 1 ];then
 			return 0
@@ -520,10 +520,10 @@ fgetip()						# Get external IP
 
 fdecryptcreds()
 {
-	if [ $(cat $VPNPATH/pass.txt 2>/dev/null | wc -c) -lt 6 ];then	
-		if [ $(cat $VPNPATH/pass.enc | wc -c) -gt 3 ];then
+	if [ $(wc -c $VPNPATH/pass.txt | cut -d' ' -f1) -lt 6 ];then
+		if [ $(wc -c $VPNPATH/pass.enc | cut -d' ' -f1) -gt 3 ];then
 			echo "$PROMPT Decrypting creds.."
-			cat $VPNPATH/pass.enc | openssl base64 -d | openssl enc -d -aes-256-cbc > $VPNPATH/pass.txt
+			openssl base64 -d $VPNPATH/pass.enc | openssl enc -d -aes-256-cbc > $VPNPATH/pass.txt
 			chmod 400 $VPNPATH/pass.txt && CREDS="$(cat $VPNPATH/pass.txt 2>/dev/null)" 
 			if [ $ENCRYPT -eq 0 ];then
 				rm $VPNPATH/pass.enc
@@ -537,7 +537,7 @@ fdecryptcreds()
 fencryptcreds()
 {
 	echo "$INFO Encypting creds.."
-	cat $VPNPATH/pass.txt 2>/dev/null | openssl enc -e -aes-256-cbc -a > $VPNPATH/pass.enc && rm $VPNPATH/pass.txt && chmod 400 $VPNPATH/pass.enc
+	openssl enc -e -aes-256-cbc -a -in $VPNPATH/pass.txt > $VPNPATH/pass.enc && rm $VPNPATH/pass.txt && chmod 400 $VPNPATH/pass.enc
 }
 
 
@@ -644,7 +644,7 @@ do
 done
 
 if [ ! -f $VPNPATH/servers.txt ];then fupdate;fi
-MAXSERVERS=$(cat $VPNPATH/servers.txt | wc -l)
+MAXSERVERS=$(wc -l $VPNPATH/servers.txt | cut -d' ' -f1)
 
 if [ $SERVERNUM -lt 1 ];then
 	echo "$PROMPT Please choose a server: "
@@ -663,8 +663,9 @@ else
 	exit 1
 fi
 
-SERVERNAME=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $1}')
-DOMAIN=$(cat $VPNPATH/servers.txt | head -n $SERVERNUM | tail -n 1 | awk '{print $2}')
+SERVERINFO=$(head -n $SERVERNUM $VPNPATH/servers.txt | tail -n 1)
+SERVERNAME=$(echo "$SERVERINFO" | awk '{print $1}')
+DOMAIN=$(echo "$SERVERINFO" | awk '{print $2}')
 CONFIG=$SERVERNAME.ovpn
 
 if [ -f $VPNPATH/.killswitch ];then
